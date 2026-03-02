@@ -40,14 +40,10 @@ bool CShaderManager::compileGlassShader() {
     glassUniforms.tintColor           = glGetUniformLocation(program, "tintColor");
     glassUniforms.tintAlpha           = glGetUniformLocation(program, "tintAlpha");
     glassUniforms.lensDistortion      = glGetUniformLocation(program, "lensDistortion");
-    glassUniforms.brightness          = glGetUniformLocation(program, "brightness");
-    glassUniforms.contrast            = glGetUniformLocation(program, "contrast");
     glassUniforms.saturation          = glGetUniformLocation(program, "saturation");
-    glassUniforms.vibrancy            = glGetUniformLocation(program, "vibrancy");
     glassUniforms.vibrancyDarkness    = glGetUniformLocation(program, "vibrancyDarkness");
     glassUniforms.adaptiveDim         = glGetUniformLocation(program, "adaptiveDim");
     glassUniforms.adaptiveBoost       = glGetUniformLocation(program, "adaptiveBoost");
-    glassUniforms.roundingPower       = glGetUniformLocation(program, "roundingPower");
 
     return true;
 }
