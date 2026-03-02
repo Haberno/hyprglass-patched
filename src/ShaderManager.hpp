@@ -15,14 +15,10 @@ struct SGlassUniforms {
     GLint tintColor = -1;
     GLint tintAlpha = -1;
     GLint lensDistortion = -1;
-    GLint brightness = -1;
-    GLint contrast = -1;
     GLint saturation = -1;
-    GLint vibrancy = -1;
     GLint vibrancyDarkness = -1;
     GLint adaptiveDim = -1;
     GLint adaptiveBoost = -1;
-    GLint roundingPower = -1;
 };
 
 struct SBlurUniforms {
