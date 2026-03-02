@@ -12,8 +12,6 @@
 #include <hyprland/src/render/OpenGL.hpp>
 #include <hyprland/src/render/Renderer.hpp>
 #include <hyprutils/math/Misc.hpp>
-#include <hyprutils/memory/SharedPtr.hpp>
-#include <memory>
 
 CGlassDecoration::CGlassDecoration(PHLWINDOW window)
     : IHyprWindowDecoration(window), m_window(window) {
@@ -84,15 +82,12 @@ void CGlassDecoration::draw(PHLMONITOR monitor, float const& alpha) {
     if (window) {
         const auto workspace = window->m_workspace;
 
-        if (workspace && !window->m_pinned && workspace->m_renderOffset->isBeingAnimated()) {
-            m_needsResample = true;
+        if (workspace && !window->m_pinned && workspace->m_renderOffset->isBeingAnimated())
             damageEntire();
-        }
 
         const auto currentPosition = window->m_realPosition->value();
         const auto currentSize = window->m_realSize->value();
         if (currentPosition != m_lastPosition || currentSize != m_lastSize) {
-            m_needsResample = true;
             damageEntire();
             m_lastPosition = currentPosition;
             m_lastSize = currentSize;
@@ -102,10 +97,6 @@ void CGlassDecoration::draw(PHLMONITOR monitor, float const& alpha) {
 
 PHLWINDOW CGlassDecoration::getOwner() {
     return m_window.lock();
-}
-
-bool CGlassDecoration::needsResample() const noexcept {
-    return m_needsResample;
 }
 
 void CGlassDecoration::sampleBackground(CFramebuffer& sourceFramebuffer, CBox box) {
@@ -140,7 +131,7 @@ void CGlassDecoration::sampleBackground(CFramebuffer& sourceFramebuffer, CBox bo
     // The render pass scissors each element to its damage region.
     // That scissor state leaks here and clips glBlitFramebuffer on the
     // DRAW framebuffer, causing partial writes and stale noise artifacts.
-    glDisable(GL_SCISSOR_TEST);
+    g_pHyprOpenGL->setCapStatus(GL_SCISSOR_TEST, false);
 
     glBindFramebuffer(GL_READ_FRAMEBUFFER, sourceFramebuffer.getFBID());
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, m_sampleFramebuffer.getFBID());
@@ -175,7 +166,7 @@ void CGlassDecoration::blurBackground(float radius, int iterations, GLuint calle
     shader->setUniformInt(SHADER_TEX, 0);
     glUniform1f(blurUniforms.radius, radius);
     glBindVertexArray(shader->getUniformLocation(SHADER_SHADER_VAO));
-    glViewport(0, 0, width, height);
+    g_pHyprOpenGL->setViewport(0, 0, width, height);
     glActiveTexture(GL_TEXTURE0);
 
     // Ping-pong at full resolution: m_sampleFramebuffer ↔ blurTempFramebuffer
@@ -196,18 +187,19 @@ void CGlassDecoration::blurBackground(float radius, int iterations, GLuint calle
     // Restore caller's GL state without querying (avoids pipeline stalls)
     glBindFramebuffer(GL_FRAMEBUFFER, callerFramebufferID);
     glBindVertexArray(0);
-    glViewport(0, 0, viewportWidth, viewportHeight);
+    g_pHyprOpenGL->setViewport(0, 0, viewportWidth, viewportHeight);
 }
 
 void CGlassDecoration::uploadThemeUniforms(const SResolveContext& ctx) const {
     const auto& uniforms = g_pGlobalState->shaderManager.glassUniforms;
+    const auto& glassShader = g_pGlobalState->shaderManager.glassShader;
     const auto& defaults = ctx.isDark ? DARK_THEME_DEFAULTS : LIGHT_THEME_DEFAULTS;
 
-    glUniform1f(uniforms.brightness,       resolvePresetFloat(ctx, &SPresetValues::brightness, &SOverridableConfig::brightness, defaults.brightness));
-    glUniform1f(uniforms.contrast,         resolvePresetFloat(ctx, &SPresetValues::contrast, &SOverridableConfig::contrast, defaults.contrast));
-    glUniform1f(uniforms.saturation,       resolvePresetFloat(ctx, &SPresetValues::saturation, &SOverridableConfig::saturation, defaults.saturation));
-    glUniform1f(uniforms.vibrancy,         resolvePresetFloat(ctx, &SPresetValues::vibrancy, &SOverridableConfig::vibrancy, defaults.vibrancy));
-    glUniform1f(uniforms.vibrancyDarkness, resolvePresetFloat(ctx, &SPresetValues::vibrancyDarkness, &SOverridableConfig::vibrancyDarkness, defaults.vibrancyDarkness));
+    glassShader->setUniformFloat(SHADER_BRIGHTNESS, resolvePresetFloat(ctx, &SPresetValues::brightness, &SOverridableConfig::brightness, defaults.brightness));
+    glassShader->setUniformFloat(SHADER_CONTRAST,   resolvePresetFloat(ctx, &SPresetValues::contrast, &SOverridableConfig::contrast, defaults.contrast));
+    glUniform1f(uniforms.saturation,                 resolvePresetFloat(ctx, &SPresetValues::saturation, &SOverridableConfig::saturation, defaults.saturation));
+    glassShader->setUniformFloat(SHADER_VIBRANCY,   resolvePresetFloat(ctx, &SPresetValues::vibrancy, &SOverridableConfig::vibrancy, defaults.vibrancy));
+    glUniform1f(uniforms.vibrancyDarkness,           resolvePresetFloat(ctx, &SPresetValues::vibrancyDarkness, &SOverridableConfig::vibrancyDarkness, defaults.vibrancyDarkness));
 
     glUniform1f(uniforms.adaptiveDim,   resolvePresetFloat(ctx, &SPresetValues::adaptiveDim, &SOverridableConfig::adaptiveDim, defaults.adaptiveDim));
     glUniform1f(uniforms.adaptiveBoost, resolvePresetFloat(ctx, &SPresetValues::adaptiveBoost, &SOverridableConfig::adaptiveBoost, defaults.adaptiveBoost));
@@ -272,7 +264,7 @@ void CGlassDecoration::applyGlassEffect(CFramebuffer& sourceFramebuffer, CFrameb
     float cornerRadius  = window ? window->rounding() * monitorScale : 0.0f;
     float roundingPower = window ? window->roundingPower() : 2.0f;
     shader->setUniformFloat(SHADER_RADIUS, cornerRadius);
-    glUniform1f(uniforms.roundingPower, roundingPower);
+    shader->setUniformFloat(SHADER_ROUNDING_POWER, roundingPower);
 
     glBindVertexArray(shader->getUniformLocation(SHADER_SHADER_VAO));
     g_pHyprOpenGL->scissor(rawBox);
@@ -311,12 +303,9 @@ void CGlassDecoration::renderPass(PHLMONITOR monitor, const float& alpha) {
         g_pHyprOpenGL->m_renderData.pMonitor->m_transformedSize.x,
         g_pHyprOpenGL->m_renderData.pMonitor->m_transformedSize.y);
 
-    // Only re-sample and re-blur when content actually changed.
-    // When static, reuse the cached blurred framebuffer — just re-composite.
-    const bool hasCache = m_sampleFramebuffer.m_size.x > 0;
-    if (m_needsResample || !hasCache) {
-        sampleBackground(*source, transformBox);
+    sampleBackground(*source, transformBox);
 
+    {
         const auto& config         = g_pGlobalState->config;
         const bool isDark          = resolveThemeIsDark();
         const std::string preset   = resolvePresetName();
@@ -328,7 +317,6 @@ void CGlassDecoration::renderPass(PHLMONITOR monitor, const float& alpha) {
         int viewportHeight   = static_cast<int>(g_pHyprOpenGL->m_renderData.pMonitor->m_transformedSize.y);
         blurBackground(blurRadius, blurIterations, source->getFBID(), viewportWidth, viewportHeight);
     }
-    m_needsResample = false;
 
     applyGlassEffect(m_sampleFramebuffer, *source, windowBox, transformBox, alpha);
 }
@@ -338,10 +326,7 @@ eDecorationType CGlassDecoration::getDecorationType() {
 }
 
 void CGlassDecoration::updateWindow(PHLWINDOW window) {
-    if (!m_needsResample) {
-        m_needsResample = true;
-        damageEntire();
-    }
+    damageEntire();
 }
 
 void CGlassDecoration::damageEntire() {
