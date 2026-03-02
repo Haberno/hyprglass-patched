@@ -1,4 +1,16 @@
 
+## [v0.2.2](https://github.com/Hyprnux/hyprglass/compare/v0.2.1...v0.2.2) - 2026-03-02
+
+### Bug Fixes
+
+* refactor shader creation for 0.54 refactored shader logic
+* refactor callbacks for new event bus listeners
+
+### Build System
+
+* update hyprland compatibility to v0.54.0
+
+
 ## [v0.2.1](https://github.com/Hyprnux/hyprglass/compare/v0.2.0...v0.2.1) - 2026-02-18
 
 ### Bug Fixes
@@ -8,6 +20,10 @@
 ### Build System
 
 * update hyprland compatibility to v0.53.3
+
+### Chores
+
+* **release:** v0.2.1 [skip ci]
 
 
 ## [v0.2.0](https://github.com/Hyprnux/hyprglass/compare/v0.1.0...v0.2.0) - 2026-02-18
