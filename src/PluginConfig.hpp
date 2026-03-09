@@ -24,8 +24,9 @@ inline constexpr auto ENABLED        = "plugin:hyprglass:enabled";
 inline constexpr auto DEFAULT_THEME  = "plugin:hyprglass:default_theme";
 inline constexpr auto DEFAULT_PRESET = "plugin:hyprglass:default_preset";
 
-// Preset keyword (registered via addConfigKeyword)
-inline constexpr auto PRESET_KEYWORD = "plugin:hyprglass:preset";
+// Preset keyword, registered as unscoped because Hyprlang does not dispatch
+// scoped keyword handlers inside the plugin special category.
+inline constexpr auto PRESET_KEYWORD = "preset";
 
 // Overridable — global level
 inline constexpr auto BLUR_STRENGTH        = "plugin:hyprglass:blur_strength";

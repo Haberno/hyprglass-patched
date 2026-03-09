@@ -72,7 +72,8 @@ void registerConfig(HANDLE handle) {
     HyprlandAPI::addConfigValue(handle, ConfigKeys::LIGHT_ADAPTIVE_DIM, SENTINEL_FLOAT);
     HyprlandAPI::addConfigValue(handle, ConfigKeys::LIGHT_ADAPTIVE_BOOST, SENTINEL_FLOAT);
 
-    // Preset keyword — parsed dynamically during config reload
+    // Registered as unscoped because Hyprlang does not dispatch
+    // scoped keyword handlers inside the plugin special category.
     HyprlandAPI::addConfigKeyword(handle, ConfigKeys::PRESET_KEYWORD, handlePresetKeyword, Hyprlang::SHandlerOptions{});
 }
 
@@ -208,6 +209,29 @@ static bool setPresetField(SPresetValues& values, std::string_view key, std::str
     return setPresetIntField(values, key, valueStr) || setPresetFloatField(values, key, valueStr);
 }
 
+static void mergePresetValues(SPresetValues& target, const SPresetValues& overrides) {
+    auto mergeFloat = [](float& dst, float src) { if (src >= 0.0f) dst = src; };
+    auto mergeInt   = [](int64_t& dst, int64_t src) { if (src >= 0) dst = src; };
+
+    mergeFloat(target.blurStrength, overrides.blurStrength);
+    mergeInt(target.blurIterations, overrides.blurIterations);
+    mergeFloat(target.refractionStrength, overrides.refractionStrength);
+    mergeFloat(target.chromaticAberration, overrides.chromaticAberration);
+    mergeFloat(target.fresnelStrength, overrides.fresnelStrength);
+    mergeFloat(target.specularStrength, overrides.specularStrength);
+    mergeFloat(target.glassOpacity, overrides.glassOpacity);
+    mergeFloat(target.edgeThickness, overrides.edgeThickness);
+    mergeInt(target.tintColor, overrides.tintColor);
+    mergeFloat(target.lensDistortion, overrides.lensDistortion);
+    mergeFloat(target.brightness, overrides.brightness);
+    mergeFloat(target.contrast, overrides.contrast);
+    mergeFloat(target.saturation, overrides.saturation);
+    mergeFloat(target.vibrancy, overrides.vibrancy);
+    mergeFloat(target.vibrancyDarkness, overrides.vibrancyDarkness);
+    mergeFloat(target.adaptiveDim, overrides.adaptiveDim);
+    mergeFloat(target.adaptiveBoost, overrides.adaptiveBoost);
+}
+
 Hyprlang::CParseResult handlePresetKeyword(const char* /*command*/, const char* value) {
     Hyprlang::CParseResult result;
     std::string_view       input(value);
@@ -269,13 +293,13 @@ Hyprlang::CParseResult handlePresetKeyword(const char* /*command*/, const char* 
     if (!inherits.empty())
         preset.inherits = inherits;
 
-    // Assign parsed values to the correct layer
+    // Merge parsed values into the correct layer (additive across multiple lines)
     if (variant == "dark")
-        preset.dark = parsedValues;
+        mergePresetValues(preset.dark, parsedValues);
     else if (variant == "light")
-        preset.light = parsedValues;
+        mergePresetValues(preset.light, parsedValues);
     else
-        preset.shared = parsedValues;
+        mergePresetValues(preset.shared, parsedValues);
 
     return result;
 }
@@ -287,10 +311,19 @@ void clearPendingPresets() {
 void commitPendingPresets() {
     if (!g_pGlobalState) return;
 
-    // Start with built-in presets, then overlay user-defined ones (user wins)
+    // Start with built-in presets, then merge user-defined overrides (non-sentinel fields win)
     auto merged = BuiltInPresets::getAll();
-    for (auto& [name, preset] : s_pendingPresets)
-        merged[name] = std::move(preset);
+    for (auto& [name, userPreset] : s_pendingPresets) {
+        if (auto it = merged.find(name); it != merged.end()) {
+            if (!userPreset.inherits.empty())
+                it->second.inherits = userPreset.inherits;
+            mergePresetValues(it->second.shared, userPreset.shared);
+            mergePresetValues(it->second.dark, userPreset.dark);
+            mergePresetValues(it->second.light, userPreset.light);
+        } else {
+            merged[name] = std::move(userPreset);
+        }
+    }
 
     g_pGlobalState->customPresets = std::move(merged);
     s_pendingPresets.clear();
