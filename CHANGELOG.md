@@ -1,9 +1,20 @@
 
+## [v0.2.6](https://github.com/Hyprnux/hyprglass/compare/v0.2.5...v0.2.6) - 2026-03-11
+
+### Build System
+
+* update hyprland compatibility to v0.54.2
+
+
 ## [v0.2.5](https://github.com/Hyprnux/hyprglass/compare/v0.2.4...v0.2.5) - 2026-03-09
 
 ### Bug Fixes
 
 * preset configuration was not correctly picked up ([#11](https://github.com/Hyprnux/hyprglass/issues/11))
+
+### Chores
+
+* **release:** v0.2.5 [skip ci]
 
 
 ## [v0.2.4](https://github.com/Hyprnux/hyprglass/compare/v0.2.3...v0.2.4) - 2026-03-04
