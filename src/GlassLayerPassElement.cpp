@@ -35,7 +35,11 @@ std::optional<CBox> CGlassLayerPassElement::boundingBox() {
 }
 
 bool CGlassLayerPassElement::needsLiveBlur() {
-    return m_data.layerState && m_data.layerState->getLayerSurface();
+    // We perform our own background sampling and blur from currentFB,
+    // so we don't need Hyprland's live blur system. Returning true here
+    // would cause Hyprland to continuously damage this area every frame,
+    // keeping the GPU busy even when the desktop is idle.
+    return false;
 }
 
 bool CGlassLayerPassElement::needsPrecomputeBlur() {

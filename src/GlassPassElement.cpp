@@ -37,7 +37,11 @@ std::optional<CBox> CGlassPassElement::boundingBox() {
 }
 
 bool CGlassPassElement::needsLiveBlur() {
-    return m_data.decoration && m_data.decoration->getOwner();
+    // We perform our own background sampling and blur from currentFB,
+    // so we don't need Hyprland's live blur system. Returning true here
+    // would cause Hyprland to continuously damage this area every frame,
+    // keeping the GPU busy even when the desktop is idle.
+    return false;
 }
 
 bool CGlassPassElement::needsPrecomputeBlur() {

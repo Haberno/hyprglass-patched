@@ -67,17 +67,27 @@ void CGlassLayerSurface::damageIfMoved() {
     if (!layerSurface)
         return;
 
+    const auto currentPosition = layerSurface->m_realPosition->value();
+    const auto currentSize     = layerSurface->m_realSize->value();
+
     const bool isAnimating = layerSurface->m_realPosition->isBeingAnimated() ||
                              layerSurface->m_realSize->isBeingAnimated() ||
                              layerSurface->m_alpha->isBeingAnimated() ||
                              layerSurface->m_fadingOut;
 
-    if (isAnimating) {
-        auto box = CBox{layerSurface->m_realPosition->value(), layerSurface->m_realSize->value()};
+    const bool moved = currentPosition != m_lastPosition || currentSize != m_lastSize;
+
+    if (moved || isAnimating) {
+        m_lastPosition  = currentPosition;
+        m_lastSize      = currentSize;
+
+        auto box = CBox{currentPosition, currentSize};
         const auto monitor = layerSurface->m_monitor.lock();
         const float scale = monitor ? monitor->m_scale : 1.0f;
         box.expand(GlassRenderer::SAMPLE_PADDING_PX / scale);
         g_pHyprRenderer->damageBox(box);
+
+        g_pGlobalState->sceneGeneration++;
     }
 }
 
@@ -106,12 +116,27 @@ void CGlassLayerSurface::sampleAndRedirect(PHLMONITOR monitor, float alpha) {
         g_pHyprOpenGL->m_renderData.pMonitor->m_transformedSize.x,
         g_pHyprOpenGL->m_renderData.pMonitor->m_transformedSize.y);
 
-    const bool isDark          = resolveThemeIsDark();
-    const std::string preset   = resolvePresetName();
-    const SResolveContext ctx  = {preset, isDark, g_pGlobalState->config, g_pGlobalState->customPresets};
+    // Decide whether we need to re-sample and re-blur the background.
+    // When only the layer surface content changed (e.g. waybar clock tick)
+    // but no window moved behind us, we reuse the cached blurred background.
+    // This skips the most expensive GPU work (blit + 6 blur passes).
+    const uint64_t currentGeneration = g_pGlobalState->sceneGeneration;
+    const bool isAnimating = layerSurface->m_realPosition->isBeingAnimated() ||
+                             layerSurface->m_realSize->isBeingAnimated() ||
+                             layerSurface->m_alpha->isBeingAnimated();
+    const bool backgroundChanged = !m_hasCachedSample ||
+                                   currentGeneration != m_lastSceneGeneration ||
+                                   isAnimating;
 
-    // During fade-out, re-sampling captures stale pixels. Reuse cached sample if available.
-    if (!layerSurface->m_fadingOut) {
+    if (layerSurface->m_fadingOut) {
+        // During fade-out, re-sampling captures stale pixels. Reuse cached sample.
+        if (!m_hasCachedSample)
+            return;
+    } else if (backgroundChanged) {
+        const bool isDark          = resolveThemeIsDark();
+        const std::string preset   = resolvePresetName();
+        const SResolveContext ctx  = {preset, isDark, g_pGlobalState->config, g_pGlobalState->customPresets};
+
         GlassRenderer::sampleBackground(m_sampleFramebuffer, *source, transformBox, m_samplePaddingRatio);
 
         float blurRadius     = resolvePresetFloat(ctx, &SPresetValues::blurStrength, &SOverridableConfig::blurStrength) * 12.0f;
@@ -120,10 +145,10 @@ void CGlassLayerSurface::sampleAndRedirect(PHLMONITOR monitor, float alpha) {
         int viewportHeight   = static_cast<int>(g_pHyprOpenGL->m_renderData.pMonitor->m_transformedSize.y);
         GlassRenderer::blurBackground(m_sampleFramebuffer, blurRadius, blurIterations, source->getFBID(), viewportWidth, viewportHeight);
 
-        m_hasCachedSample = true;
-    } else if (!m_hasCachedSample) {
-        return;
+        m_hasCachedSample      = true;
+        m_lastSceneGeneration  = currentGeneration;
     }
+    // else: background unchanged, reuse cached blur — skip 7 GPU operations
 
     // Redirect surface rendering to a temp FBO cleared to transparent.
     // The original renderLayer (called between pre/post elements) will render
@@ -139,11 +164,21 @@ void CGlassLayerSurface::sampleAndRedirect(PHLMONITOR monitor, float alpha) {
     g_pHyprOpenGL->m_renderData.currentFB = &m_surfaceTempFramebuffer;
     glBindFramebuffer(GL_FRAMEBUFFER, m_surfaceTempFramebuffer.getFBID());
 
-    // Disable scissor to clear the entire temp FBO — the render pass scissor
-    // would otherwise clip the clear to the current damage region.
-    g_pHyprOpenGL->setCapStatus(GL_SCISSOR_TEST, false);
-    glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
-    glClear(GL_COLOR_BUFFER_BIT);
+    // Scissored clear: only clear the layer's area + margin in the temp FBO.
+    // The mask shader only reads within the layer's UV bounds, so content outside
+    // doesn't matter. This avoids clearing millions of unused pixels on
+    // monitor-sized FBOs (e.g. 48x48 layer on a 2560x1440 FBO).
+    {
+        const int pad = GlassRenderer::SAMPLE_PADDING_PX;
+        const int sx  = std::max(0, static_cast<int>(transformBox.x) - pad);
+        const int sy  = std::max(0, static_cast<int>(transformBox.y) - pad);
+        const int sw  = std::min(monitorWidth  - sx, static_cast<int>(transformBox.w) + 2 * pad);
+        const int sh  = std::min(monitorHeight - sy, static_cast<int>(transformBox.h) + 2 * pad);
+        glEnable(GL_SCISSOR_TEST);
+        glScissor(sx, sy, sw, sh);
+        glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+        glClear(GL_COLOR_BUFFER_BIT);
+    }
 }
 
 void CGlassLayerSurface::compositeAndRestore(PHLMONITOR monitor, float alpha) {

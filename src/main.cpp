@@ -116,6 +116,12 @@ static void hkRenderLayer(CHyprRenderer* thisptr, PHLLS layerSurface, PHLMONITOR
                            const Time::steady_tp& now, bool popups, bool lockscreen) {
     const auto& config = g_pGlobalState->config;
 
+    // Prune dead layer surfaces whose weak_ptr has expired (layer was destroyed
+    // but never got a replacement at the same raw pointer address)
+    std::erase_if(g_pGlobalState->layerSurfaces, [](const auto& pair) {
+        return !pair.second->getLayerSurface();
+    });
+
     // Only inject glass on the main surface pass, not popups
     if (!popups && config.layersEnabled && **config.layersEnabled && shouldGlassLayer(layerSurface)) {
         // Lazy-create per-layer state, replacing stale entries whose weak ref died
@@ -130,6 +136,10 @@ static void hkRenderLayer(CHyprRenderer* thisptr, PHLLS layerSurface, PHLMONITOR
         }
 
         float alpha = layerSurface->m_alpha->value();
+        if (alpha < 0.001f) {
+            ((renderLayerFn)g_pGlobalState->renderLayerHook->m_original)(thisptr, layerSurface, monitor, now, popups, lockscreen);
+            return;
+        }
 
         // Pre-surface: sample+blur background, redirect currentFB → temp FBO
         CGlassLayerPassElement::SGlassLayerPassData preData{it->second, alpha};

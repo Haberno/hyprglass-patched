@@ -176,6 +176,10 @@ void CGlassDecoration::damageEntire() {
     surfaceBox.expand(GlassRenderer::SAMPLE_PADDING_PX / scale);
 
     g_pHyprRenderer->damageBox(surfaceBox);
+
+    // Signal layer surfaces that the scene behind them may have changed,
+    // so they need to re-sample and re-blur on next render.
+    g_pGlobalState->sceneGeneration++;
 }
 
 eDecorationLayer CGlassDecoration::getDecorationLayer() {

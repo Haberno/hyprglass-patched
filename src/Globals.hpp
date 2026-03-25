@@ -36,6 +36,11 @@ struct SGlobalState {
     // Per-namespace preset overrides (namespace → preset name)
     std::unordered_map<std::string, std::string> layerNamespacePresets;
 
+    // Incremented when the scene behind layers changes (window move/resize/open/close).
+    // Layer surfaces compare this to their cached value to skip redundant blur work
+    // when only the layer's own content changed (e.g. waybar clock tick).
+    uint64_t sceneGeneration = 0;
+
     // renderLayer hook
     CFunctionHook* renderLayerHook = nullptr;
 };

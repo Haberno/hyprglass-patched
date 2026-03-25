@@ -28,6 +28,14 @@ class CGlassLayerSurface {
     Vector2D     m_samplePaddingRatio;
     bool         m_hasCachedSample = false;
 
+    // Track last position/size to detect movement and expand damage
+    Vector2D     m_lastPosition;
+    Vector2D     m_lastSize;
+
+    // Scene generation at last blur — skip re-sampling when only the layer
+    // surface content changed (e.g. clock tick) but the background didn't.
+    uint64_t     m_lastSceneGeneration = 0;
+
     // Saved currentFB pointer, restored in compositeAndRestore
     CFramebuffer* m_savedCurrentFB = nullptr;
 
