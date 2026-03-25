@@ -1,9 +1,25 @@
 
+## [v0.3.0](https://github.com/Hyprnux/hyprglass/compare/v0.2.7...v0.3.0) - 2026-03-25
+
+### Features
+
+* handle layer decoration - BETA ([#6](https://github.com/Hyprnux/hyprglass/issues/6))
+
+### Performance Improvements
+
+* conditionaly make half-res blur if blur_strenght is sufficient enough
+* reduce GPU overhead for layer glass effect, still not perfect ([#6](https://github.com/Hyprnux/hyprglass/issues/6))
+
+
 ## [v0.2.7](https://github.com/Hyprnux/hyprglass/compare/v0.2.6...v0.2.7) - 2026-03-11
 
 ### Build System
 
 * improved the makefile to allow for parallel builds + fix linker flag
+
+### Chores
+
+* **release:** v0.2.7 [skip ci]
 
 
 ## [v0.2.6](https://github.com/Hyprnux/hyprglass/compare/v0.2.5...v0.2.6) - 2026-03-11
