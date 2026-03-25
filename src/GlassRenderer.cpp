@@ -25,13 +25,18 @@ static void uploadThemeUniforms(const SResolveContext& ctx) {
 }
 
 void sampleBackground(CFramebuffer& sampleFramebuffer, CFramebuffer& sourceFramebuffer,
-                       CBox box, Vector2D& outPaddingRatio) {
+                       CBox box, Vector2D& outPaddingRatio, int downscale) {
     const int pad = SAMPLE_PADDING_PX;
-    int paddedWidth  = static_cast<int>(box.width) + 2 * pad;
-    int paddedHeight = static_cast<int>(box.height) + 2 * pad;
+    int fullWidth  = static_cast<int>(box.width) + 2 * pad;
+    int fullHeight = static_cast<int>(box.height) + 2 * pad;
 
-    if (sampleFramebuffer.m_size.x != paddedWidth || sampleFramebuffer.m_size.y != paddedHeight)
-        sampleFramebuffer.alloc(paddedWidth, paddedHeight, sourceFramebuffer.m_drmFormat);
+    // Allocate sample FBO at reduced resolution when blur is strong enough
+    // to hide the lower resolution. Weak blur at half-res shows pixelation.
+    int sampleWidth  = std::max(1, fullWidth / downscale);
+    int sampleHeight = std::max(1, fullHeight / downscale);
+
+    if (sampleFramebuffer.m_size.x != sampleWidth || sampleFramebuffer.m_size.y != sampleHeight)
+        sampleFramebuffer.alloc(sampleWidth, sampleHeight, sourceFramebuffer.m_drmFormat);
 
     int srcX0 = static_cast<int>(box.x) - pad;
     int srcX1 = static_cast<int>(box.x + box.width) + pad;
@@ -42,16 +47,22 @@ void sampleBackground(CFramebuffer& sampleFramebuffer, CFramebuffer& sourceFrame
     int framebufferWidth  = static_cast<int>(sourceFramebuffer.m_size.x);
     int framebufferHeight = static_cast<int>(sourceFramebuffer.m_size.y);
 
-    int dstX0 = 0, dstY0 = 0, dstX1 = paddedWidth, dstY1 = paddedHeight;
+    // Destination coords in downscaled FBO space
+    int dstX0 = 0, dstY0 = 0, dstX1 = sampleWidth, dstY1 = sampleHeight;
 
-    if (srcX0 < 0) { dstX0 += -srcX0; srcX0 = 0; }
-    if (srcY0 < 0) { dstY0 += -srcY0; srcY0 = 0; }
-    if (srcX1 > framebufferWidth)  { dstX1 -= (srcX1 - framebufferWidth);  srcX1 = framebufferWidth; }
-    if (srcY1 > framebufferHeight) { dstY1 -= (srcY1 - framebufferHeight); srcY1 = framebufferHeight; }
+    // Scale destination adjustments proportionally for the downscaled FBO
+    const float xScale = static_cast<float>(sampleWidth) / fullWidth;
+    const float yScale = static_cast<float>(sampleHeight) / fullHeight;
 
+    if (srcX0 < 0) { dstX0 += static_cast<int>(-srcX0 * xScale); srcX0 = 0; }
+    if (srcY0 < 0) { dstY0 += static_cast<int>(-srcY0 * yScale); srcY0 = 0; }
+    if (srcX1 > framebufferWidth)  { dstX1 -= static_cast<int>((srcX1 - framebufferWidth) * xScale);  srcX1 = framebufferWidth; }
+    if (srcY1 > framebufferHeight) { dstY1 -= static_cast<int>((srcY1 - framebufferHeight) * yScale); srcY1 = framebufferHeight; }
+
+    // Padding ratio is relative to the logical content area (resolution-independent)
     outPaddingRatio = Vector2D(
-        static_cast<double>(pad) / paddedWidth,
-        static_cast<double>(pad) / paddedHeight
+        static_cast<double>(pad) / fullWidth,
+        static_cast<double>(pad) / fullHeight
     );
 
     // The render pass scissors each element to its damage region.

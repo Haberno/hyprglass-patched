@@ -13,6 +13,12 @@ namespace GlassRenderer {
 
 inline constexpr int SAMPLE_PADDING_PX = 60;
 
+// Maximum downscale factor for blur sampling. Half-res (2) is 4x cheaper
+// per blur pass. Only applied when blur is strong enough to hide the lower
+// resolution — weak blur at half-res shows visible pixelation.
+inline constexpr int   BLUR_DOWNSCALE_MAX       = 2;
+inline constexpr float BLUR_DOWNSCALE_THRESHOLD = 0.35f; // min blur_strength for downscale
+
 // Layers only: alpha mask from the temp FBO that captured the rendered surface.
 // Constrains the glass effect to regions where the layer has visible content.
 // Windows do not use masking, they pass mask=nullptr to applyGlassEffect.
@@ -24,7 +30,7 @@ struct SMaskInfo {
 };
 
 void sampleBackground(CFramebuffer& sampleFramebuffer, CFramebuffer& sourceFramebuffer,
-                       CBox box, Vector2D& outPaddingRatio);
+                       CBox box, Vector2D& outPaddingRatio, int downscale = 1);
 
 void blurBackground(CFramebuffer& sampleFramebuffer, float radius, int iterations,
                     GLuint callerFramebufferID, int viewportWidth, int viewportHeight);
