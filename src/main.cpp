@@ -38,14 +38,12 @@ static void onCloseWindow(PHLWINDOW window) {
 
 // ── Layer surface support ────────────────────────────────────────────────────
 
+// Parse comma-separated config string into a set of trimmed values.
 static void parseCommaSeparated(Hyprlang::STRING const* configPtr, std::unordered_set<std::string>& out) {
     out.clear();
-    if (!configPtr)
-        return;
-
+    if (!configPtr) return;
     const char* raw = *configPtr;
-    if (!raw || raw[0] == '\0')
-        return;
+    if (!raw || raw[0] == '\0') return;
 
     std::istringstream stream(raw);
     std::string token;
@@ -57,31 +55,28 @@ static void parseCommaSeparated(Hyprlang::STRING const* configPtr, std::unordere
     }
 }
 
-static void parseNamespacePresets(Hyprlang::STRING const* configPtr, std::unordered_map<std::string, std::string>& out) {
-    out.clear();
-    if (!configPtr)
-        return;
-
+// Parse comma-separated "key<sep>value" pairs. The callback receives (key, valueStr) for each pair.
+template <typename Fn>
+static void parseKeyValuePairs(Hyprlang::STRING const* configPtr, char separator, Fn&& callback) {
+    if (!configPtr) return;
     const char* raw = *configPtr;
-    if (!raw || raw[0] == '\0')
-        return;
+    if (!raw || raw[0] == '\0') return;
 
     std::istringstream stream(raw);
     std::string token;
     while (std::getline(stream, token, ',')) {
-        auto colonPos = token.find(':');
-        if (colonPos == std::string::npos)
-            continue;
+        auto sepPos = token.rfind(separator);
+        if (sepPos == std::string::npos) continue;
 
-        auto nsStart = token.find_first_not_of(" \t");
-        auto nsEnd   = token.find_last_not_of(" \t", colonPos - 1);
-        auto pStart  = token.find_first_not_of(" \t", colonPos + 1);
-        auto pEnd    = token.find_last_not_of(" \t");
+        auto kStart = token.find_first_not_of(" \t");
+        auto kEnd   = token.find_last_not_of(" \t", sepPos - 1);
+        auto vStart = token.find_first_not_of(" \t", sepPos + 1);
+        auto vEnd   = token.find_last_not_of(" \t");
 
-        if (nsStart != std::string::npos && nsEnd != std::string::npos &&
-            pStart != std::string::npos && pEnd != std::string::npos && nsStart <= nsEnd && pStart <= pEnd) {
-            out.emplace(token.substr(nsStart, nsEnd - nsStart + 1),
-                        token.substr(pStart, pEnd - pStart + 1));
+        if (kStart != std::string::npos && kEnd != std::string::npos &&
+            vStart != std::string::npos && vEnd != std::string::npos && kStart <= kEnd && vStart <= vEnd) {
+            callback(token.substr(kStart, kEnd - kStart + 1),
+                     token.substr(vStart, vEnd - vStart + 1));
         }
     }
 }
@@ -90,7 +85,16 @@ static void parseLayerNamespaceFilters() {
     const auto& config = g_pGlobalState->config;
     parseCommaSeparated(config.layersNamespaces, g_pGlobalState->layerNamespaceFilter);
     parseCommaSeparated(config.layersExcludeNamespaces, g_pGlobalState->layerNamespaceExclude);
-    parseNamespacePresets(config.layersNamespacePresets, g_pGlobalState->layerNamespacePresets);
+
+    g_pGlobalState->layerNamespacePresets.clear();
+    parseKeyValuePairs(config.layersNamespacePresets, ':', [&](const std::string& ns, const std::string& preset) {
+        g_pGlobalState->layerNamespacePresets.emplace(ns, preset);
+    });
+
+    g_pGlobalState->layerNamespaceMaskThresholds.clear();
+    parseKeyValuePairs(config.layersNamespaceMaskThresholds, '=', [&](const std::string& ns, const std::string& val) {
+        try { g_pGlobalState->layerNamespaceMaskThresholds.emplace(ns, std::stof(val)); } catch (...) {}
+    });
 }
 
 static bool shouldGlassLayer(PHLLS layerSurface) {
@@ -183,6 +187,18 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     static auto onOpen = Event::bus()->m_events.window.open.listen([&](PHLWINDOW w) { onNewWindow(w); });
 
     static auto onClose = Event::bus()->m_events.window.close.listen([&](PHLWINDOW w) { onCloseWindow(w); });
+
+    // Z-order / visibility changes invalidate layer glass caches on the affected monitor only.
+    // Per-monitor to avoid triggering re-samples on idle monitors (feedback loop).
+    auto bumpWindowMonitor = [&](PHLWINDOW w) {
+        if (w) if (auto mon = w->m_monitor.lock()) g_pGlobalState->bumpSceneGeneration(mon.get());
+    };
+    static auto onWindowActive = Event::bus()->m_events.window.active.listen(
+        [=](PHLWINDOW w, Desktop::eFocusReason) { bumpWindowMonitor(w); });
+    static auto onWindowFullscreen = Event::bus()->m_events.window.fullscreen.listen(
+        [=](PHLWINDOW w) { bumpWindowMonitor(w); });
+    static auto onWindowMoveToWorkspace = Event::bus()->m_events.window.moveToWorkspace.listen(
+        [=](PHLWINDOW w, PHLWORKSPACE) { bumpWindowMonitor(w); });
 
     // Clear pending presets before config re-parse, commit after
     static auto onPreConfigReload = Event::bus()->m_events.config.preReload.listen([&]() { clearPendingPresets(); });

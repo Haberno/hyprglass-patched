@@ -20,6 +20,7 @@ void registerConfig(HANDLE handle) {
     HyprlandAPI::addConfigValue(handle, ConfigKeys::LAYERS_EXCLUDE_NAMESPACES, Hyprlang::STRING{""});
     HyprlandAPI::addConfigValue(handle, ConfigKeys::LAYERS_PRESET, Hyprlang::STRING{""});
     HyprlandAPI::addConfigValue(handle, ConfigKeys::LAYERS_NAMESPACE_PRESETS, Hyprlang::STRING{""});
+    HyprlandAPI::addConfigValue(handle, ConfigKeys::LAYERS_NAMESPACE_MASK_THRESHOLDS, Hyprlang::STRING{""});
 
     // Global level — real defaults for effect settings,
     // sentinel for theme-sensitive settings (fallback to hardcoded theme defaults)
@@ -129,7 +130,8 @@ void initConfigPointers(HANDLE handle, SPluginConfig& config) {
     config.layersNamespaces        = (Hyprlang::STRING const*)HyprlandAPI::getConfigValue(handle, ConfigKeys::LAYERS_NAMESPACES)->getDataStaticPtr();
     config.layersExcludeNamespaces = (Hyprlang::STRING const*)HyprlandAPI::getConfigValue(handle, ConfigKeys::LAYERS_EXCLUDE_NAMESPACES)->getDataStaticPtr();
     config.layersPreset            = (Hyprlang::STRING const*)HyprlandAPI::getConfigValue(handle, ConfigKeys::LAYERS_PRESET)->getDataStaticPtr();
-    config.layersNamespacePresets  = (Hyprlang::STRING const*)HyprlandAPI::getConfigValue(handle, ConfigKeys::LAYERS_NAMESPACE_PRESETS)->getDataStaticPtr();
+    config.layersNamespacePresets         = (Hyprlang::STRING const*)HyprlandAPI::getConfigValue(handle, ConfigKeys::LAYERS_NAMESPACE_PRESETS)->getDataStaticPtr();
+    config.layersNamespaceMaskThresholds = (Hyprlang::STRING const*)HyprlandAPI::getConfigValue(handle, ConfigKeys::LAYERS_NAMESPACE_MASK_THRESHOLDS)->getDataStaticPtr();
 
     initOverridablePointers(handle, config.global,
         ConfigKeys::BLUR_STRENGTH, ConfigKeys::BLUR_ITERATIONS,

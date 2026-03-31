@@ -35,11 +35,20 @@ struct SGlobalState {
     std::unordered_set<std::string> layerNamespaceExclude;
     // Per-namespace preset overrides (namespace → preset name)
     std::unordered_map<std::string, std::string> layerNamespacePresets;
+    // Per-namespace mask alpha threshold (namespace → threshold, default 0.001)
+    std::unordered_map<std::string, float> layerNamespaceMaskThresholds;
 
-    // Incremented when the scene behind layers changes (window move/resize/open/close).
-    // Layer surfaces compare this to their cached value to skip redundant blur work
-    // when only the layer's own content changed (e.g. waybar clock tick).
-    uint64_t sceneGeneration = 0;
+    // Per-monitor generation counter, incremented when the scene behind layers
+    // changes on that monitor. Layer surfaces compare to their cached value to
+    // skip redundant blur work. Per-monitor avoids cross-monitor feedback loops
+    // where re-sampling on an idle monitor captures its own stale glass output.
+    std::unordered_map<CMonitor*, uint64_t> sceneGeneration;
+
+    uint64_t getSceneGeneration(CMonitor* mon) const {
+        auto it = sceneGeneration.find(mon);
+        return it != sceneGeneration.end() ? it->second : 0;
+    }
+    void bumpSceneGeneration(CMonitor* mon) { sceneGeneration[mon]++; }
 
     // renderLayer hook
     CFunctionHook* renderLayerHook = nullptr;

@@ -72,7 +72,7 @@ SDecorationPositioningInfo CGlassDecoration::getPositioningInfo() {
 void CGlassDecoration::onPositioningReply(const SDecorationPositioningReply& reply) {}
 
 void CGlassDecoration::draw(PHLMONITOR monitor, float const& alpha) {
-    if (!**g_pGlobalState->config.enabled)
+    if (!g_pGlobalState || !g_pGlobalState->config.enabled || !**g_pGlobalState->config.enabled)
         return;
 
     CGlassPassElement::SGlassPassData data{this, alpha};
@@ -82,15 +82,24 @@ void CGlassDecoration::draw(PHLMONITOR monitor, float const& alpha) {
     if (window) {
         const auto workspace = window->m_workspace;
 
-        if (workspace && !window->m_pinned && workspace->m_renderOffset->isBeingAnimated())
+        const bool wsAnimating = workspace && !window->m_pinned && workspace->m_renderOffset->isBeingAnimated();
+        if (wsAnimating)
             damageEntire();
 
         const auto currentPosition = window->m_realPosition->value();
         const auto currentSize = window->m_realSize->value();
-        if (currentPosition != m_lastPosition || currentSize != m_lastSize) {
+        const bool moved = currentPosition != m_lastPosition || currentSize != m_lastSize;
+        if (moved) {
             damageEntire();
             m_lastPosition = currentPosition;
             m_lastSize = currentSize;
+        }
+
+        // Bump layer cache only for actual scene changes (window moved/animating),
+        // NOT from damageEntire() which fires in the damage system feedback path.
+        if (moved || wsAnimating) {
+            if (auto mon = window->m_monitor.lock())
+                g_pGlobalState->bumpSceneGeneration(mon.get());
         }
     }
 }
@@ -179,10 +188,6 @@ void CGlassDecoration::damageEntire() {
     surfaceBox.expand(GlassRenderer::SAMPLE_PADDING_PX / scale);
 
     g_pHyprRenderer->damageBox(surfaceBox);
-
-    // Signal layer surfaces that the scene behind them may have changed,
-    // so they need to re-sample and re-blur on next render.
-    g_pGlobalState->sceneGeneration++;
 }
 
 eDecorationLayer CGlassDecoration::getDecorationLayer() {

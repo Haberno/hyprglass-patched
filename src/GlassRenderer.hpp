@@ -27,6 +27,7 @@ struct SMaskInfo {
     GLenum   target;
     Vector2D uvOffset; // mapping from glass box UV → full surface UV
     Vector2D uvScale;
+    float    alphaThreshold = 0.001f;
 };
 
 void sampleBackground(CFramebuffer& sampleFramebuffer, CFramebuffer& sourceFramebuffer,

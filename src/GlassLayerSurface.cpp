@@ -14,6 +14,16 @@ CGlassLayerSurface::CGlassLayerSurface(PHLLS layerSurface)
     : m_layerSurface(layerSurface) {
 }
 
+CGlassLayerSurface::~CGlassLayerSurface() {
+    // Damage the area where glass was last drawn so the compositor
+    // re-renders it without the glass effect (prevents ghost artifacts).
+    if (g_pHyprRenderer && m_lastSize.x > 0 && m_lastSize.y > 0) {
+        auto box = CBox{m_lastPosition, m_lastSize};
+        box.expand(GlassRenderer::SAMPLE_PADDING_PX);
+        g_pHyprRenderer->damageBox(box);
+    }
+}
+
 bool CGlassLayerSurface::resolveThemeIsDark() const {
     try {
         const auto& config = g_pGlobalState->config;
@@ -87,7 +97,8 @@ void CGlassLayerSurface::damageIfMoved() {
         box.expand(GlassRenderer::SAMPLE_PADDING_PX / scale);
         g_pHyprRenderer->damageBox(box);
 
-        g_pGlobalState->sceneGeneration++;
+        if (monitor)
+            g_pGlobalState->bumpSceneGeneration(monitor.get());
     }
 }
 
@@ -120,7 +131,7 @@ void CGlassLayerSurface::sampleAndRedirect(PHLMONITOR monitor, float alpha) {
     // When only the layer surface content changed (e.g. waybar clock tick)
     // but no window moved behind us, we reuse the cached blurred background.
     // This skips the most expensive GPU work (blit + 6 blur passes).
-    const uint64_t currentGeneration = g_pGlobalState->sceneGeneration;
+    const uint64_t currentGeneration = g_pGlobalState->getSceneGeneration(monitor.get());
     const bool isAnimating = layerSurface->m_realPosition->isBeingAnimated() ||
                              layerSurface->m_realSize->isBeingAnimated() ||
                              layerSurface->m_alpha->isBeingAnimated();
@@ -159,8 +170,12 @@ void CGlassLayerSurface::sampleAndRedirect(PHLMONITOR monitor, float alpha) {
     int monitorWidth  = static_cast<int>(monitor->m_transformedSize.x);
     int monitorHeight = static_cast<int>(monitor->m_transformedSize.y);
 
+    // Force ARGB8888 for the temp FBO: the mask shader needs alpha precision.
+    // Monitor FBOs use XRGB formats (no usable alpha); XRGB2101010 (10-bit)
+    // has only 2-bit alpha, quantizing values below ~0.17 to zero and breaking
+    // the mask discard for low-opacity layers.
     if (m_surfaceTempFramebuffer.m_size.x != monitorWidth || m_surfaceTempFramebuffer.m_size.y != monitorHeight)
-        m_surfaceTempFramebuffer.alloc(monitorWidth, monitorHeight, source->m_drmFormat);
+        m_surfaceTempFramebuffer.alloc(monitorWidth, monitorHeight, DRM_FORMAT_ARGB8888);
 
     m_savedCurrentFB = source;
 
@@ -181,6 +196,8 @@ void CGlassLayerSurface::sampleAndRedirect(PHLMONITOR monitor, float alpha) {
         glScissor(sx, sy, sw, sh);
         glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
         glClear(GL_COLOR_BUFFER_BIT);
+        glDisable(GL_SCISSOR_TEST);
+        g_pHyprOpenGL->setCapStatus(GL_SCISSOR_TEST, false);
     }
 }
 
@@ -228,11 +245,17 @@ void CGlassLayerSurface::compositeAndRestore(PHLMONITOR monitor, float alpha) {
     int monitorWidth  = static_cast<int>(monitor->m_transformedSize.x);
     int monitorHeight = static_cast<int>(monitor->m_transformedSize.y);
 
+    float maskThreshold = 0.001f;
+    auto threshIt = g_pGlobalState->layerNamespaceMaskThresholds.find(layerSurface->m_namespace);
+    if (threshIt != g_pGlobalState->layerNamespaceMaskThresholds.end())
+        maskThreshold = threshIt->second;
+
     GlassRenderer::SMaskInfo maskInfo{
-        .textureId = m_surfaceTempFramebuffer.getTexture()->m_texID,
-        .target    = GL_TEXTURE_2D,
-        .uvOffset  = {transformBox.x / monitorWidth, transformBox.y / monitorHeight},
-        .uvScale   = {transformBox.w / monitorWidth, transformBox.h / monitorHeight},
+        .textureId      = m_surfaceTempFramebuffer.getTexture()->m_texID,
+        .target         = GL_TEXTURE_2D,
+        .uvOffset       = {transformBox.x / monitorWidth, transformBox.y / monitorHeight},
+        .uvScale        = {transformBox.w / monitorWidth, transformBox.h / monitorHeight},
+        .alphaThreshold = maskThreshold,
     };
 
     // The glass shader composites both the glass effect and the surface content
