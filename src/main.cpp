@@ -199,6 +199,10 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
         [=](PHLWINDOW w) { bumpWindowMonitor(w); });
     static auto onWindowMoveToWorkspace = Event::bus()->m_events.window.moveToWorkspace.listen(
         [=](PHLWINDOW w, PHLWORKSPACE) { bumpWindowMonitor(w); });
+    static auto onWorkspaceActive = Event::bus()->m_events.workspace.active.listen(
+        [&](PHLWORKSPACE ws) {
+            if (ws) if (auto mon = ws->m_monitor.lock()) g_pGlobalState->bumpSceneGeneration(mon.get());
+        });
 
     // Clear pending presets before config re-parse, commit after
     static auto onPreConfigReload = Event::bus()->m_events.config.preReload.listen([&]() { clearPendingPresets(); });

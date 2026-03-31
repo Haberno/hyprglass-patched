@@ -5,6 +5,7 @@
 #include "LayerGeometry.hpp"
 
 #include <algorithm>
+#include <hyprland/src/desktop/Workspace.hpp>
 #include <GLES3/gl32.h>
 #include <hyprland/src/render/OpenGL.hpp>
 #include <hyprland/src/render/Renderer.hpp>
@@ -132,9 +133,11 @@ void CGlassLayerSurface::sampleAndRedirect(PHLMONITOR monitor, float alpha) {
     // but no window moved behind us, we reuse the cached blurred background.
     // This skips the most expensive GPU work (blit + 6 blur passes).
     const uint64_t currentGeneration = g_pGlobalState->getSceneGeneration(monitor.get());
+    const auto activeWs = monitor->m_activeWorkspace;
     const bool isAnimating = layerSurface->m_realPosition->isBeingAnimated() ||
                              layerSurface->m_realSize->isBeingAnimated() ||
-                             layerSurface->m_alpha->isBeingAnimated();
+                             layerSurface->m_alpha->isBeingAnimated() ||
+                             (activeWs && activeWs->m_renderOffset->isBeingAnimated());
     const bool backgroundChanged = !m_hasCachedSample ||
                                    currentGeneration != m_lastSceneGeneration ||
                                    isAnimating;
