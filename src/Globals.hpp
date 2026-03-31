@@ -35,6 +35,8 @@ struct SGlobalState {
     std::unordered_set<std::string> layerNamespaceExclude;
     // Per-namespace preset overrides (namespace → preset name)
     std::unordered_map<std::string, std::string> layerNamespacePresets;
+    // Per-namespace mask alpha threshold (namespace → threshold, default 0.001)
+    std::unordered_map<std::string, float> layerNamespaceMaskThresholds;
 
     // Incremented when the scene behind layers changes (window move/resize/open/close).
     // Layer surfaces compare this to their cached value to skip redundant blur work

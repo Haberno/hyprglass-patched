@@ -83,15 +83,24 @@ plugin:hyprglass {
 | `default_preset` | string | `default` | Default preset name |
 
 ### Layer surfaces (BETA)
+The glass effect can also be applied to layer surfaces (bars, docks, widgets).
 
-The glass effect can also be applied to layer surfaces (bars, docks, widgets). 
-Disabled by default.
+__Disabled by default.__
 
-**Caveat:** Fully transparent layers will be ignored, that's wanted, just use some very small opacity on the surface to trigger the glass effect. _It's because layers can come in a vast variety of forms, and we have no way to differenciate real transparent surface that needs to be blurred from transparent surface or claimed space that needs to be ignored._
 
-**Known issue:** Layers shadows will not render correctly at the moment, they will be considered as part of the glass surface.
+Fully transparent layers area will be ignored, that's wanted, just use some very small opacity on the area backgrounds you want to trigger the effect on.
 
-**Known issue 2:** Intensive GPU usage during animation of glassed layers surface, make it look laggy.
+It works by using a mask using layer surface opacity:
+* **Partialy** transparent layer surface (down to 1/255 opacity, ~0.004) **WILL TRIGGER** the Hyprglass effect
+* **Fully** transparent layer surfaces are totaly ignored and **WILL NOT TRIGGER** the Hyprglass effect
+
+
+**Why:** _It's because layers can come in a vast variety of forms, and we have no way to differenciate real transparent surface that needs to be blurred from transparent surface or claimed space that needs to be ignored._
+
+**Caveat:** By default, layer shadows will be considered as part of the glass surface.
+- Either use `namespace_mask_thresholds` to set a per-namespace alpha threshold higher than your shadow opacity but lower than your content opacity.
+- Alternatively, render shadows on a separate layer surface not included in the Hyprglass whitelist.
+
 
 
 | Option | Type | Default | Description |
@@ -101,15 +110,20 @@ Disabled by default.
 | `layers:exclude_namespaces` | string | `""` | Comma-separated namespace blacklist. Takes priority over whitelist |
 | `layers:preset` | string | `""` | Preset override for all layers. Empty = use `default_preset` |
 | `layers:namespace_presets` | string | `""` | Per-namespace preset overrides (`ns:preset` pairs, comma-separated). Takes priority over `layers:preset` |
+| `layers:namespace_mask_thresholds` | string | `""` | Per-namespace alpha threshold for the glass mask (`ns=value` pairs, comma-separated). Pixels with alpha below the threshold are not glassed. Default threshold is `0.001`. Set to `0.0` for full-area glass regardless of surface content |
 
 ```ini
 plugin:hyprglass {
     layers {
         enabled = 1
-        namespaces = bar, dock, notifications
+        namespaces = bar, dock, bezel, notifications
         exclude_namespaces = some-debug-panel
         preset = subtle
         namespace_presets = waybar:bar-glass, notifications:notif-glass
+
+        # Bezel: glass only on solid content (alpha >= 0.3), shadows pass through
+        # Background overlay: full-area glass regardless of content
+        namespace_mask_thresholds = quickshell:bezel=0.3, background=0.0
     }
 }
 ```

@@ -56,6 +56,7 @@ uniform sampler2D maskTex;
 uniform int useMask;
 uniform vec2 maskUVOffset;
 uniform vec2 maskUVScale;
+uniform float maskAlphaThreshold;
 
 in vec2 v_texcoord;
 layout(location = 0) out vec4 fragColor;
@@ -122,7 +123,7 @@ void main() {
     if (hasMask) {
         vec2 maskUV = uv * maskUVScale + maskUVOffset;
         surfacePixel = texture(maskTex, clamp(maskUV, 0.001, 0.999));
-        if (surfacePixel.a < 0.001) discard;
+        if (surfacePixel.a < maskAlphaThreshold) discard;
     }
 
     float cornerSdf = getCornerSDF(uv);

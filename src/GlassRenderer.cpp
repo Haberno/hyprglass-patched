@@ -206,8 +206,10 @@ void applyGlassEffect(CFramebuffer& sampleFramebuffer, CFramebuffer& targetFrame
         glUniform2f(uniforms.maskUVScale,
             static_cast<float>(mask->uvScale.x),
             static_cast<float>(mask->uvScale.y));
+        glUniform1f(uniforms.maskAlphaThreshold, mask->alphaThreshold);
     } else {
         glUniform1i(uniforms.useMask, 0);
+        glUniform1f(uniforms.maskAlphaThreshold, 0.001f);
     }
 
     shader->setUniformFloat(SHADER_RADIUS, cornerRadius);

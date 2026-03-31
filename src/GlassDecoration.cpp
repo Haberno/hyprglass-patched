@@ -72,7 +72,7 @@ SDecorationPositioningInfo CGlassDecoration::getPositioningInfo() {
 void CGlassDecoration::onPositioningReply(const SDecorationPositioningReply& reply) {}
 
 void CGlassDecoration::draw(PHLMONITOR monitor, float const& alpha) {
-    if (!**g_pGlobalState->config.enabled)
+    if (!g_pGlobalState || !g_pGlobalState->config.enabled || !**g_pGlobalState->config.enabled)
         return;
 
     CGlassPassElement::SGlassPassData data{this, alpha};

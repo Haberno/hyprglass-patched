@@ -17,7 +17,7 @@ CGlassLayerSurface::CGlassLayerSurface(PHLLS layerSurface)
 CGlassLayerSurface::~CGlassLayerSurface() {
     // Damage the area where glass was last drawn so the compositor
     // re-renders it without the glass effect (prevents ghost artifacts).
-    if (m_lastSize.x > 0 && m_lastSize.y > 0) {
+    if (g_pHyprRenderer && m_lastSize.x > 0 && m_lastSize.y > 0) {
         auto box = CBox{m_lastPosition, m_lastSize};
         box.expand(GlassRenderer::SAMPLE_PADDING_PX);
         g_pHyprRenderer->damageBox(box);
@@ -244,11 +244,17 @@ void CGlassLayerSurface::compositeAndRestore(PHLMONITOR monitor, float alpha) {
     int monitorWidth  = static_cast<int>(monitor->m_transformedSize.x);
     int monitorHeight = static_cast<int>(monitor->m_transformedSize.y);
 
+    float maskThreshold = 0.001f;
+    auto threshIt = g_pGlobalState->layerNamespaceMaskThresholds.find(layerSurface->m_namespace);
+    if (threshIt != g_pGlobalState->layerNamespaceMaskThresholds.end())
+        maskThreshold = threshIt->second;
+
     GlassRenderer::SMaskInfo maskInfo{
-        .textureId = m_surfaceTempFramebuffer.getTexture()->m_texID,
-        .target    = GL_TEXTURE_2D,
-        .uvOffset  = {transformBox.x / monitorWidth, transformBox.y / monitorHeight},
-        .uvScale   = {transformBox.w / monitorWidth, transformBox.h / monitorHeight},
+        .textureId      = m_surfaceTempFramebuffer.getTexture()->m_texID,
+        .target         = GL_TEXTURE_2D,
+        .uvOffset       = {transformBox.x / monitorWidth, transformBox.y / monitorHeight},
+        .uvScale        = {transformBox.w / monitorWidth, transformBox.h / monitorHeight},
+        .alphaThreshold = maskThreshold,
     };
 
     // The glass shader composites both the glass effect and the surface content
