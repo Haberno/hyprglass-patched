@@ -9,7 +9,7 @@
 class CGlassLayerSurface {
   public:
     explicit CGlassLayerSurface(PHLLS layerSurface);
-    ~CGlassLayerSurface() = default;
+    ~CGlassLayerSurface();
 
     // Phase 1 (pre-surface): sample+blur background, redirect currentFB → temp FBO
     void sampleAndRedirect(PHLMONITOR monitor, float alpha);
