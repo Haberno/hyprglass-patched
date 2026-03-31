@@ -1,10 +1,21 @@
 
+## [v0.4.1](https://github.com/Hyprnux/hyprglass/compare/v0.4.0...v0.4.1) - 2026-03-31
+
+### Bug Fixes
+
+* when workspace animation occurs and no windows were on workspace, effect was not redrawn (useful when background animation occur on workspace changes)
+
+
 ## [v0.4.0](https://github.com/Hyprnux/hyprglass/compare/v0.3.1...v0.4.0) - 2026-03-31
 
 ### Bug Fixes
 
 * correct redraw artifact on multi-monitor setup
 * some low opacity layers on XRGB monitors where shown without the effect
+
+### Chores
+
+* **release:** v0.4.0 [skip ci]
 
 ### Features
 
