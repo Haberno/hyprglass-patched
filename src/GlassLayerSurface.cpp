@@ -97,7 +97,8 @@ void CGlassLayerSurface::damageIfMoved() {
         box.expand(GlassRenderer::SAMPLE_PADDING_PX / scale);
         g_pHyprRenderer->damageBox(box);
 
-        g_pGlobalState->sceneGeneration++;
+        if (monitor)
+            g_pGlobalState->bumpSceneGeneration(monitor.get());
     }
 }
 
@@ -130,7 +131,7 @@ void CGlassLayerSurface::sampleAndRedirect(PHLMONITOR monitor, float alpha) {
     // When only the layer surface content changed (e.g. waybar clock tick)
     // but no window moved behind us, we reuse the cached blurred background.
     // This skips the most expensive GPU work (blit + 6 blur passes).
-    const uint64_t currentGeneration = g_pGlobalState->sceneGeneration;
+    const uint64_t currentGeneration = g_pGlobalState->getSceneGeneration(monitor.get());
     const bool isAnimating = layerSurface->m_realPosition->isBeingAnimated() ||
                              layerSurface->m_realSize->isBeingAnimated() ||
                              layerSurface->m_alpha->isBeingAnimated();

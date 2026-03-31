@@ -35,11 +35,12 @@ std::optional<CBox> CGlassLayerPassElement::boundingBox() {
 }
 
 bool CGlassLayerPassElement::needsLiveBlur() {
-    // We perform our own background sampling and blur from currentFB,
-    // so we don't need Hyprland's live blur system. Returning true here
-    // would cause Hyprland to continuously damage this area every frame,
-    // keeping the GPU busy even when the desktop is idle.
-    return false;
+    // Ensure the render pass fully re-renders the background behind this
+    // element before we sample it. Without this, partial damage causes the
+    // glass to sample a mix of fresh wallpaper and its own stale output.
+    // Per-monitor sceneGeneration prevents non-focused monitors from
+    // re-sampling, so the continuous damage cost is limited.
+    return m_data.layerState && m_data.layerState->getLayerSurface();
 }
 
 bool CGlassLayerPassElement::needsPrecomputeBlur() {

@@ -188,6 +188,18 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
     static auto onClose = Event::bus()->m_events.window.close.listen([&](PHLWINDOW w) { onCloseWindow(w); });
 
+    // Z-order / visibility changes invalidate layer glass caches on the affected monitor only.
+    // Per-monitor to avoid triggering re-samples on idle monitors (feedback loop).
+    auto bumpWindowMonitor = [&](PHLWINDOW w) {
+        if (w) if (auto mon = w->m_monitor.lock()) g_pGlobalState->bumpSceneGeneration(mon.get());
+    };
+    static auto onWindowActive = Event::bus()->m_events.window.active.listen(
+        [=](PHLWINDOW w, Desktop::eFocusReason) { bumpWindowMonitor(w); });
+    static auto onWindowFullscreen = Event::bus()->m_events.window.fullscreen.listen(
+        [=](PHLWINDOW w) { bumpWindowMonitor(w); });
+    static auto onWindowMoveToWorkspace = Event::bus()->m_events.window.moveToWorkspace.listen(
+        [=](PHLWINDOW w, PHLWORKSPACE) { bumpWindowMonitor(w); });
+
     // Clear pending presets before config re-parse, commit after
     static auto onPreConfigReload = Event::bus()->m_events.config.preReload.listen([&]() { clearPendingPresets(); });
 
