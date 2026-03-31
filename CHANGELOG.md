@@ -1,9 +1,25 @@
 
+## [v0.4.0](https://github.com/Hyprnux/hyprglass/compare/v0.3.1...v0.4.0) - 2026-03-31
+
+### Bug Fixes
+
+* correct redraw artifact on multi-monitor setup
+* some low opacity layers on XRGB monitors where shown without the effect
+
+### Features
+
+* **layers:** add namespace_mask_thresholds for better shadow handling + fix some config parsing issues
+
+
 ## [v0.3.1](https://github.com/Hyprnux/hyprglass/compare/v0.3.0...v0.3.1) - 2026-03-30
 
 ### Build System
 
 * update hyprland compatibility to v0.54.3
+
+### Chores
+
+* **release:** v0.3.1 [skip ci]
 
 
 ## [v0.3.0](https://github.com/Hyprnux/hyprglass/compare/v0.2.7...v0.3.0) - 2026-03-25
