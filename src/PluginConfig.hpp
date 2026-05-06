@@ -11,6 +11,11 @@ inline constexpr std::string_view CONFIG_PREFIX = "plugin:hyprglass:";
 inline constexpr std::string_view TAG_THEME_PREFIX  = "hyprglass_theme_";
 inline constexpr std::string_view TAG_PRESET_PREFIX = "hyprglass_preset_";
 
+// Window tags for per-window enable/disable. Override the global `enabled` setting.
+// `hyprglass_disabled` always wins if both are present.
+inline constexpr std::string_view TAG_ENABLED  = "hyprglass_enabled";
+inline constexpr std::string_view TAG_DISABLED = "hyprglass_disabled";
+
 // Sentinel: "not set by user, inherit from parent layer"
 inline constexpr Hyprlang::FLOAT SENTINEL_FLOAT = -1.0;
 inline constexpr Hyprlang::INT   SENTINEL_INT   = -1;
