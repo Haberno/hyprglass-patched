@@ -1,9 +1,24 @@
 
+## [v0.5.0](https://github.com/Hyprnux/hyprglass/compare/v0.4.1...v0.5.0) - 2026-05-06
+
+### Bug Fixes
+
+* fading workspace  animations were not fading the glass layer ([#24](https://github.com/Hyprnux/hyprglass/issues/24))
+
+### Features
+
+* add ability to enable/disable hyprglass effect per-window ([#23](https://github.com/Hyprnux/hyprglass/issues/23))
+
+
 ## [v0.4.1](https://github.com/Hyprnux/hyprglass/compare/v0.4.0...v0.4.1) - 2026-03-31
 
 ### Bug Fixes
 
 * when workspace animation occurs and no windows were on workspace, effect was not redrawn (useful when background animation occur on workspace changes)
+
+### Chores
+
+* **release:** v0.4.1 [skip ci]
 
 
 ## [v0.4.0](https://github.com/Hyprnux/hyprglass/compare/v0.3.1...v0.4.0) - 2026-03-31
