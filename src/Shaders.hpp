@@ -272,10 +272,13 @@ void main() {
             ? (surfRGB * surfA + color * glassA * (1.0 - surfA)) / compA
             : vec3(0.0);
 
-        fragColor = vec4(compRGB, compA);
+        // Hyprland's compositor expects premultiplied alpha (blend GL_ONE, GL_ONE_MINUS_SRC_ALPHA).
+        fragColor = vec4(compRGB * compA, compA);
     } else {
         // Windows: output the glass effect alone, surface is rendered separately by Hyprland.
-        fragColor = vec4(color, glassA);
+        // Premultiplied: without this, a fading window's glass keeps full RGB contribution
+        // because the GL_ONE source factor adds raw color regardless of alpha.
+        fragColor = vec4(color * glassA, glassA);
     }
 }
 )GLSL"},
