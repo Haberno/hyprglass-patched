@@ -36,6 +36,7 @@ class CGlassDecoration : public IHyprWindowDecoration {
     Vector2D m_lastPosition;
     Vector2D m_lastSize;
 
+    [[nodiscard]] bool        resolveEnabled() const;
     [[nodiscard]] bool        resolveThemeIsDark() const;
     [[nodiscard]] std::string resolvePresetName() const;
 

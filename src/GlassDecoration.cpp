@@ -17,6 +17,25 @@ CGlassDecoration::CGlassDecoration(PHLWINDOW window)
     : IHyprWindowDecoration(window), m_window(window) {
 }
 
+bool CGlassDecoration::resolveEnabled() const {
+    const auto& config = g_pGlobalState->config;
+    const bool globalEnabled = config.enabled && **config.enabled;
+
+    try {
+        const auto window = m_window.lock();
+        if (window && window->m_ruleApplicator) {
+            const auto& tags = window->m_ruleApplicator->m_tagKeeper;
+            // Disabled tag wins over enabled tag if both are present.
+            if (tags.isTagged(std::string(TAG_DISABLED)))
+                return false;
+            if (tags.isTagged(std::string(TAG_ENABLED)))
+                return true;
+        }
+    } catch (...) {}
+
+    return globalEnabled;
+}
+
 bool CGlassDecoration::resolveThemeIsDark() const {
     try {
         const auto window = m_window.lock();
@@ -72,7 +91,7 @@ SDecorationPositioningInfo CGlassDecoration::getPositioningInfo() {
 void CGlassDecoration::onPositioningReply(const SDecorationPositioningReply& reply) {}
 
 void CGlassDecoration::draw(PHLMONITOR monitor, float const& alpha) {
-    if (!g_pGlobalState || !g_pGlobalState->config.enabled || !**g_pGlobalState->config.enabled)
+    if (!g_pGlobalState || !resolveEnabled())
         return;
 
     CGlassPassElement::SGlassPassData data{this, alpha};

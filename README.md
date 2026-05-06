@@ -78,60 +78,9 @@ plugin:hyprglass {
 
 | Option | Type | Default | Description |
 |---|---|---|---|
-| `enabled` | int | `1` | Enable/disable the effect (0 or 1) |
+| `enabled` | int | `1` | Enable/disable the effect globally (0 or 1). Per-window tags `hyprglass_enabled` / `hyprglass_disabled` override this. |
 | `default_theme` | string | `dark` | Default theme: `dark` or `light` |
 | `default_preset` | string | `default` | Default preset name |
-
-### Layer surfaces (BETA)
-The glass effect can also be applied to layer surfaces (bars, docks, widgets).
-
-__Disabled by default.__
-
-
-Fully transparent layers area will be ignored, that's wanted, just use some very small opacity on the area backgrounds you want to trigger the effect on.
-
-It works by using a mask using layer surface opacity:
-* **Partialy** transparent layer surface (down to 1/255 opacity, ~0.004) **WILL TRIGGER** the Hyprglass effect
-* **Fully** transparent layer surfaces are totaly ignored and **WILL NOT TRIGGER** the Hyprglass effect
-
-
-**Why:** _It's because layers can come in a vast variety of forms, and we have no way to differenciate real transparent surface that needs to be blurred from transparent surface or claimed space that needs to be ignored._
-
-**Caveat:** By default, layer shadows will be considered as part of the glass surface.
-- Either use `namespace_mask_thresholds` to set a per-namespace alpha threshold higher than your shadow opacity but lower than your content opacity.
-- Alternatively, render shadows on a separate layer surface not included in the Hyprglass whitelist.
-
-
-
-| Option | Type | Default | Description |
-|---|---|---|---|
-| `layers:enabled` | int | `0` | Enable glass on layer surfaces (0 or 1) |
-| `layers:namespaces` | string | `""` | Comma-separated namespace whitelist. Empty = all layers |
-| `layers:exclude_namespaces` | string | `""` | Comma-separated namespace blacklist. Takes priority over whitelist |
-| `layers:preset` | string | `""` | Preset override for all layers. Empty = use `default_preset` |
-| `layers:namespace_presets` | string | `""` | Per-namespace preset overrides (`ns:preset` pairs, comma-separated). Takes priority over `layers:preset` |
-| `layers:namespace_mask_thresholds` | string | `""` | Per-namespace alpha threshold for the glass mask (`ns=value` pairs, comma-separated). Pixels with alpha below the threshold are not glassed. Default threshold is `0.001`. Set to `0.0` for full-area glass regardless of surface content |
-
-```ini
-plugin:hyprglass {
-    layers {
-        enabled = 1
-        namespaces = bar, dock, bezel, notifications
-        exclude_namespaces = some-debug-panel
-        preset = subtle
-        namespace_presets = waybar:bar-glass, notifications:notif-glass
-
-        # Bezel: glass only on solid content (alpha >= 0.3), shadows pass through
-        # Background overlay: full-area glass regardless of content
-        namespace_mask_thresholds = quickshell:bezel=0.3, background=0.0
-    }
-}
-```
-
-If `namespaces` is empty, all layers are included except those in `exclude_namespaces`.  `
-If `namespaces` is set, only listed namespaces are included — `exclude_namespaces` still takes priority.
-
-> **Note:** Layer support hooks into Hyprland's internal render pipeline. This is version-sensitive and may break across Hyprland updates.
 
 ### Overridable settings
 
@@ -158,6 +107,30 @@ Set globally, per theme with `dark:` / `light:` prefix, or in a preset.
 | `adaptive_boost` | float | — | `0.0` | `0.4` | Boosts dark areas behind the glass (black is black 0 -to- 1 black becomes white) |
 
 `—` in Global Default = falls through to per-theme default. `—` in Dark/Light = inherits global value.
+
+### Per-window enable / disable
+
+Override the global `enabled` setting per window via tags:
+
+- `hyprglass_disabled` — force the effect off on this window (wins over `hyprglass_enabled` if both present).
+- `hyprglass_enabled` — force the effect on this window. Useful with global `enabled = 0` for a whitelist.
+
+```ini
+# Blacklist mode: effect on by default, disable for specific apps
+windowrule = tag +hyprglass_disabled, class:mpv
+windowrule = tag +hyprglass_disabled, fullscreen:1
+
+# Whitelist mode: effect off by default, enable only for specific apps
+plugin:hyprglass {
+    enabled = 0
+}
+windowrule = tag +hyprglass_enabled, class:kitty
+```
+
+Or on the fly:
+```bash
+hyprctl dispatch tagwindow +hyprglass_disabled
+```
 
 ### Theme detection
 
@@ -243,9 +216,61 @@ plugin:hyprglass {
 
 *Increase two last digits of tint colors for more opacity of tint color and more contrast with background*
 
+### Layer surfaces (BETA)
+The glass effect can also be applied to layer surfaces (bars, docks, widgets).
+
+__Disabled by default.__
+
+
+Fully transparent layers area will be ignored, that's wanted, just use some very small opacity on the area backgrounds you want to trigger the effect on.
+
+It works by using a mask using layer surface opacity:
+* **Partialy** transparent layer surface (down to 1/255 opacity, ~0.004) **WILL TRIGGER** the Hyprglass effect
+* **Fully** transparent layer surfaces are totaly ignored and **WILL NOT TRIGGER** the Hyprglass effect
+
+
+**Why:** _It's because layers can come in a vast variety of forms, and we have no way to differenciate real transparent surface that needs to be blurred from transparent surface or claimed space that needs to be ignored._
+
+**Caveat:** By default, layer shadows will be considered as part of the glass surface.
+- Either use `namespace_mask_thresholds` to set a per-namespace alpha threshold higher than your shadow opacity but lower than your content opacity.
+- Alternatively, render shadows on a separate layer surface not included in the Hyprglass whitelist.
+
+
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `layers:enabled` | int | `0` | Enable glass on layer surfaces (0 or 1) |
+| `layers:namespaces` | string | `""` | Comma-separated namespace whitelist. Empty = all layers |
+| `layers:exclude_namespaces` | string | `""` | Comma-separated namespace blacklist. Takes priority over whitelist |
+| `layers:preset` | string | `""` | Preset override for all layers. Empty = use `default_preset` |
+| `layers:namespace_presets` | string | `""` | Per-namespace preset overrides (`ns:preset` pairs, comma-separated). Takes priority over `layers:preset` |
+| `layers:namespace_mask_thresholds` | string | `""` | Per-namespace alpha threshold for the glass mask (`ns=value` pairs, comma-separated). Pixels with alpha below the threshold are not glassed. Default threshold is `0.001`. Set to `0.0` for full-area glass regardless of surface content |
+
+```ini
+plugin:hyprglass {
+    layers {
+        enabled = 1
+        namespaces = bar, dock, bezel, notifications
+        exclude_namespaces = some-debug-panel
+        preset = subtle
+        namespace_presets = waybar:bar-glass, notifications:notif-glass
+
+        # Bezel: glass only on solid content (alpha >= 0.3), shadows pass through
+        # Background overlay: full-area glass regardless of content
+        namespace_mask_thresholds = quickshell:bezel=0.3, background=0.0
+    }
+}
+```
+
+If `namespaces` is empty, all layers are included except those in `exclude_namespaces`.  `
+If `namespaces` is set, only listed namespaces are included — `exclude_namespaces` still takes priority.
+
+> **Note:** Layer support hooks into Hyprland's internal render pipeline. This is version-sensitive and may break across Hyprland updates.
+
+
 ## How It Works
 
-The window is modeled as a **thick convex glass slab**. The rendering pipeline per window:
+The window/layer is modeled as a **thick convex glass slab**. The rendering pipeline per window:
 
 1. **Background sampling** — The framebuffer behind the window is captured with padding (content beyond the window boundary is included).
 2. **Gaussian blur** — Multi-pass two-pass (horizontal + vertical) Gaussian blur for the frosted look.
