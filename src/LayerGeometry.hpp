@@ -3,6 +3,7 @@
 #include <hyprland/src/desktop/view/LayerSurface.hpp>
 #include <hyprland/src/render/OpenGL.hpp>
 #include <hyprutils/math/Box.hpp>
+#include <cmath>
 #include <optional>
 
 namespace LayerGeometry {
@@ -11,12 +12,14 @@ namespace LayerGeometry {
     if (!layerSurface || !monitor)
         return std::nullopt;
 
-    // Full animated layer geometry — the temp FBO mask constrains glass to visible
-    // content pixel-perfectly, so input region subsetting is not needed here.
+    // Full animated layer geometry in monitor-local framebuffer pixels.
     auto box = CBox{layerSurface->m_realPosition->value(), layerSurface->m_realSize->value()};
     box.translate(-monitor->m_position);
-    box.scale(monitor->m_scale);
-    box.round();
+    box.scale(monitor->m_scale).round().noNegativeSize();
+
+    if (!std::isfinite(box.x) || !std::isfinite(box.y) || !std::isfinite(box.w) || !std::isfinite(box.h) || box.w <= 0.0 || box.h <= 0.0)
+        return std::nullopt;
+
     return box;
 }
 

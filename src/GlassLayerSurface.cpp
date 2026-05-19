@@ -5,11 +5,18 @@
 #include "LayerGeometry.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <hyprland/src/desktop/Workspace.hpp>
 #include <GLES3/gl32.h>
 #include <hyprland/src/render/OpenGL.hpp>
 #include <hyprland/src/render/Renderer.hpp>
 #include <hyprutils/math/Misc.hpp>
+
+static CBox transformedLayerBox(CBox pixelBox, PHLMONITOR monitor) {
+    const auto transform = Math::wlTransformToHyprutils(Math::invertTransform(monitor->m_transform));
+    pixelBox.transform(transform, monitor->m_transformedSize.x, monitor->m_transformedSize.y).noNegativeSize().round();
+    return pixelBox;
+}
 
 CGlassLayerSurface::CGlassLayerSurface(PHLLS layerSurface)
     : m_layerSurface(layerSurface) {
@@ -18,21 +25,22 @@ CGlassLayerSurface::CGlassLayerSurface(PHLLS layerSurface)
 CGlassLayerSurface::~CGlassLayerSurface() {
     // Damage the area where glass was last drawn so the compositor
     // re-renders it without the glass effect (prevents ghost artifacts).
-    if (g_pHyprRenderer && m_lastSize.x > 0 && m_lastSize.y > 0) {
+    if (g_pHyprRenderer && m_lastSize.x > 0 && m_lastSize.y > 0 &&
+        std::isfinite(m_lastPosition.x) && std::isfinite(m_lastPosition.y) &&
+        std::isfinite(m_lastSize.x) && std::isfinite(m_lastSize.y)) {
         auto box = CBox{m_lastPosition, m_lastSize};
-        box.expand(GlassRenderer::SAMPLE_PADDING_PX);
-        g_pHyprRenderer->damageBox(box);
+        box.expand(GlassRenderer::SAMPLE_PADDING_PX).noNegativeSize();
+        if (box.w > 0.0 && box.h > 0.0)
+            g_pHyprRenderer->damageBox(box);
     }
 }
 
 bool CGlassLayerSurface::resolveThemeIsDark() const {
     try {
         const auto& config = g_pGlobalState->config;
-        if (config.defaultTheme) {
-            const char* theme = *config.defaultTheme;
-            if (theme)
-                return std::string_view(theme) != "light";
-        }
+        const auto theme = readStringConfig(config.defaultTheme);
+        if (!theme.empty())
+            return theme != "light";
     } catch (...) {}
 
     return true;
@@ -52,18 +60,14 @@ std::string CGlassLayerSurface::resolvePresetName() const {
         const auto& config = g_pGlobalState->config;
 
         // Layer-wide preset override
-        if (config.layersPreset) {
-            const char* preset = *config.layersPreset;
-            if (preset && preset[0] != '\0')
-                return std::string(preset);
-        }
+        const auto layerPreset = readStringConfig(config.layersPreset);
+        if (!layerPreset.empty())
+            return std::string(layerPreset);
 
         // Fall back to global default preset
-        if (config.defaultPreset) {
-            const char* preset = *config.defaultPreset;
-            if (preset && preset[0] != '\0')
-                return std::string(preset);
-        }
+        const auto defaultPreset = readStringConfig(config.defaultPreset);
+        if (!defaultPreset.empty())
+            return std::string(defaultPreset);
     } catch (...) {}
 
     return "default";
@@ -80,6 +84,10 @@ void CGlassLayerSurface::damageIfMoved() {
 
     const auto currentPosition = layerSurface->m_realPosition->value();
     const auto currentSize     = layerSurface->m_realSize->value();
+    if (currentSize.x <= 0.0 || currentSize.y <= 0.0 ||
+        !std::isfinite(currentPosition.x) || !std::isfinite(currentPosition.y) ||
+        !std::isfinite(currentSize.x) || !std::isfinite(currentSize.y))
+        return;
 
     const bool isAnimating = layerSurface->m_realPosition->isBeingAnimated() ||
                              layerSurface->m_realSize->isBeingAnimated() ||
@@ -95,8 +103,9 @@ void CGlassLayerSurface::damageIfMoved() {
         auto box = CBox{currentPosition, currentSize};
         const auto monitor = layerSurface->m_monitor.lock();
         const float scale = monitor ? monitor->m_scale : 1.0f;
-        box.expand(GlassRenderer::SAMPLE_PADDING_PX / scale);
-        g_pHyprRenderer->damageBox(box);
+        box.expand(GlassRenderer::SAMPLE_PADDING_PX / scale).noNegativeSize();
+        if (box.w > 0.0 && box.h > 0.0)
+            g_pHyprRenderer->damageBox(box);
 
         if (monitor)
             g_pGlobalState->bumpSceneGeneration(monitor.get());
@@ -114,19 +123,15 @@ void CGlassLayerSurface::sampleAndRedirect(PHLMONITOR monitor, float alpha) {
     if (!layerSurface)
         return;
 
-    auto* source = g_pHyprOpenGL->m_renderData.currentFB;
+    auto source = g_pHyprRenderer->m_renderData.currentFB;
+    if (!source)
+        return;
 
     auto layerBox = LayerGeometry::computeLayerBox(layerSurface, monitor);
     if (!layerBox)
         return;
 
-    CBox transformBox = *layerBox;
-
-    const auto transform = Math::wlTransformToHyprutils(
-        Math::invertTransform(g_pHyprOpenGL->m_renderData.pMonitor->m_transform));
-    transformBox.transform(transform,
-        g_pHyprOpenGL->m_renderData.pMonitor->m_transformedSize.x,
-        g_pHyprOpenGL->m_renderData.pMonitor->m_transformedSize.y);
+    CBox transformBox = transformedLayerBox(*layerBox, monitor);
 
     // Decide whether we need to re-sample and re-blur the background.
     // When only the layer surface content changed (e.g. waybar clock tick)
@@ -154,13 +159,13 @@ void CGlassLayerSurface::sampleAndRedirect(PHLMONITOR monitor, float alpha) {
         float blurStrength   = resolvePresetFloat(ctx, &SPresetValues::blurStrength, &SOverridableConfig::blurStrength);
         int downscale        = blurStrength >= GlassRenderer::BLUR_DOWNSCALE_THRESHOLD ? GlassRenderer::BLUR_DOWNSCALE_MAX : 1;
 
-        GlassRenderer::sampleBackground(m_sampleFramebuffer, *source, transformBox, m_samplePaddingRatio, downscale);
+        GlassRenderer::sampleBackground(m_sampleFramebuffer, source, transformBox, m_samplePaddingRatio, downscale);
 
         float blurRadius     = blurStrength * 12.0f / downscale;
         int blurIterations   = std::clamp(static_cast<int>(resolvePresetInt(ctx, &SPresetValues::blurIterations, &SOverridableConfig::blurIterations)), 1, 5);
-        int viewportWidth    = static_cast<int>(g_pHyprOpenGL->m_renderData.pMonitor->m_transformedSize.x);
-        int viewportHeight   = static_cast<int>(g_pHyprOpenGL->m_renderData.pMonitor->m_transformedSize.y);
-        GlassRenderer::blurBackground(m_sampleFramebuffer, blurRadius, blurIterations, source->getFBID(), viewportWidth, viewportHeight);
+        int viewportWidth    = static_cast<int>(g_pHyprRenderer->m_renderData.pMonitor->m_transformedSize.x);
+        int viewportHeight   = static_cast<int>(g_pHyprRenderer->m_renderData.pMonitor->m_transformedSize.y);
+        GlassRenderer::blurBackground(m_sampleFramebuffer, blurRadius, blurIterations, dynamic_cast<Render::GL::CGLFramebuffer*>(source.get())->getFBID(), viewportWidth, viewportHeight);
 
         m_hasCachedSample      = true;
         m_lastSceneGeneration  = currentGeneration;
@@ -177,39 +182,36 @@ void CGlassLayerSurface::sampleAndRedirect(PHLMONITOR monitor, float alpha) {
     // Monitor FBOs use XRGB formats (no usable alpha); XRGB2101010 (10-bit)
     // has only 2-bit alpha, quantizing values below ~0.17 to zero and breaking
     // the mask discard for low-opacity layers.
-    if (m_surfaceTempFramebuffer.m_size.x != monitorWidth || m_surfaceTempFramebuffer.m_size.y != monitorHeight)
-        m_surfaceTempFramebuffer.alloc(monitorWidth, monitorHeight, DRM_FORMAT_ARGB8888);
+    if (!m_surfaceTempFramebuffer)
+        m_surfaceTempFramebuffer = g_pHyprRenderer->createFB("hyprglass-layer-temp");
+
+    if (m_surfaceTempFramebuffer->m_size.x != monitorWidth || m_surfaceTempFramebuffer->m_size.y != monitorHeight)
+        m_surfaceTempFramebuffer->alloc(monitorWidth, monitorHeight, DRM_FORMAT_ARGB8888);
 
     m_savedCurrentFB = source;
 
-    g_pHyprOpenGL->m_renderData.currentFB = &m_surfaceTempFramebuffer;
-    glBindFramebuffer(GL_FRAMEBUFFER, m_surfaceTempFramebuffer.getFBID());
+    g_pHyprRenderer->m_renderData.currentFB = m_surfaceTempFramebuffer;
+    glBindFramebuffer(GL_FRAMEBUFFER, dynamic_cast<Render::GL::CGLFramebuffer*>(m_surfaceTempFramebuffer.get())->getFBID());
 
-    // Scissored clear: only clear the layer's area + margin in the temp FBO.
-    // The mask shader only reads within the layer's UV bounds, so content outside
-    // doesn't matter. This avoids clearing millions of unused pixels on
-    // monitor-sized FBOs (e.g. 48x48 layer on a 2560x1440 FBO).
-    {
-        const int pad = GlassRenderer::SAMPLE_PADDING_PX;
-        const int sx  = std::max(0, static_cast<int>(transformBox.x) - pad);
-        const int sy  = std::max(0, static_cast<int>(transformBox.y) - pad);
-        const int sw  = std::min(monitorWidth  - sx, static_cast<int>(transformBox.w) + 2 * pad);
-        const int sh  = std::min(monitorHeight - sy, static_cast<int>(transformBox.h) + 2 * pad);
-        glEnable(GL_SCISSOR_TEST);
-        glScissor(sx, sy, sw, sh);
+    CBox clearBox = transformBox;
+    clearBox.expand(GlassRenderer::SAMPLE_PADDING_PX);
+    clearBox = clearBox.intersection(CBox{0.0, 0.0, static_cast<double>(monitorWidth), static_cast<double>(monitorHeight)}).noNegativeSize().round();
+
+    if (std::isfinite(clearBox.x) && std::isfinite(clearBox.y) && std::isfinite(clearBox.w) && std::isfinite(clearBox.h) &&
+        clearBox.w > 0.0 && clearBox.h > 0.0) {
+        g_pHyprOpenGL->scissor(clearBox, false);
         glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
         glClear(GL_COLOR_BUFFER_BIT);
-        glDisable(GL_SCISSOR_TEST);
-        g_pHyprOpenGL->setCapStatus(GL_SCISSOR_TEST, false);
+        g_pHyprOpenGL->scissor(nullptr);
     }
 }
 
 void CGlassLayerSurface::compositeAndRestore(PHLMONITOR monitor, float alpha) {
     // Restore the original currentFB before compositing
     if (m_savedCurrentFB) {
-        g_pHyprOpenGL->m_renderData.currentFB = m_savedCurrentFB;
-        glBindFramebuffer(GL_FRAMEBUFFER, m_savedCurrentFB->getFBID());
-        m_savedCurrentFB = nullptr;
+        g_pHyprRenderer->m_renderData.currentFB = m_savedCurrentFB;
+        glBindFramebuffer(GL_FRAMEBUFFER, dynamic_cast<Render::GL::CGLFramebuffer*>(m_savedCurrentFB.get())->getFBID());
+        m_savedCurrentFB.reset();
     }
 
     auto& shaderManager = g_pGlobalState->shaderManager;
@@ -220,20 +222,16 @@ void CGlassLayerSurface::compositeAndRestore(PHLMONITOR monitor, float alpha) {
     if (!layerSurface)
         return;
 
-    auto* target = g_pHyprOpenGL->m_renderData.currentFB;
+    auto target = g_pHyprRenderer->m_renderData.currentFB;
+    if (!target)
+        return;
 
     auto layerBox = LayerGeometry::computeLayerBox(layerSurface, monitor);
     if (!layerBox)
         return;
 
     CBox rawBox       = *layerBox;
-    CBox transformBox = rawBox;
-
-    const auto transform = Math::wlTransformToHyprutils(
-        Math::invertTransform(g_pHyprOpenGL->m_renderData.pMonitor->m_transform));
-    transformBox.transform(transform,
-        g_pHyprOpenGL->m_renderData.pMonitor->m_transformedSize.x,
-        g_pHyprOpenGL->m_renderData.pMonitor->m_transformedSize.y);
+    CBox transformBox = transformedLayerBox(rawBox, monitor);
 
     const bool isDark          = resolveThemeIsDark();
     const std::string preset   = resolvePresetName();
@@ -254,16 +252,16 @@ void CGlassLayerSurface::compositeAndRestore(PHLMONITOR monitor, float alpha) {
         maskThreshold = threshIt->second;
 
     GlassRenderer::SMaskInfo maskInfo{
-        .textureId      = m_surfaceTempFramebuffer.getTexture()->m_texID,
-        .target         = GL_TEXTURE_2D,
-        .uvOffset       = {transformBox.x / monitorWidth, transformBox.y / monitorHeight},
-        .uvScale        = {transformBox.w / monitorWidth, transformBox.h / monitorHeight},
-        .alphaThreshold = maskThreshold,
+        .textureId         = m_surfaceTempFramebuffer->getTexture()->m_texID,
+        .target            = GL_TEXTURE_2D,
+        .uvOffset          = {transformBox.x / monitorWidth, transformBox.y / monitorHeight},
+        .uvScale           = {transformBox.w / monitorWidth, transformBox.h / monitorHeight},
+        .alphaThreshold    = maskThreshold,
     };
 
     // The glass shader composites both the glass effect and the surface content
     // in a single pass: glass behind, surface on top, using the temp FBO alpha.
-    GlassRenderer::applyGlassEffect(m_sampleFramebuffer, *target,
+    GlassRenderer::applyGlassEffect(m_sampleFramebuffer, target,
                                      rawBox, transformBox, alpha,
                                      cornerRadius, roundingPower, m_samplePaddingRatio, ctx,
                                      &maskInfo);

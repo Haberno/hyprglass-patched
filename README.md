@@ -16,7 +16,7 @@ Builds against your exact Hyprland version, no ABI mismatch headaches:
 
 ```bash
 hyprpm add https://github.com/hyprnux/hyprglass
-hyprpm enable HyprGlass
+hyprpm enable hyprglass
 ```
 
 ### Pre-built release
@@ -42,53 +42,98 @@ hyprctl plugin load $(pwd)/hyprglass.so
 
 ## Configuration
 
-Everything goes under `plugin:hyprglass:` in your Hyprland config.
+### Lua config
 
-### Theme and presets
+The plugin must be loaded before configuring it. Wrap everything in a guard:
 
-Configuration uses:
+```lua
+if hl.plugin.hyprglass then
+    local hg = hl.plugin.hyprglass
 
-- **Preset** – named set of settings that can be inherited, global or given by the "hyprglass-aware" window through tag.
-- **Theme** (`dark` / `light`) – fine tuning (brightness, contrast, saturation, adaptive dim/boost, ...), global or given by the "hyprglass-aware" window through tag.
+    hg.config({
+        default_theme = "dark",
+        default_preset = "clear",
+        tint_color = 0x8899aa22,
 
-Settings resolve through:
+        brightness = 0.9,
+        dark = { brightness = 0.82 },
+        light = { adaptive_boost = 0.5 },
 
-1. **Preset** – by priority: theme values, preset shared values, then inherited preset (recursive)
-2. **Built-in theme override** (`dark:` / `light:` prefix in settings)
-3. **Global value** (no prefix in settings)
-4. **Hardcoded theme default**
+        layers = { enabled = 1 },
+    })
+
+    -- Layer surfaces: each call whitelists the namespace and configures it
+    hg.layer("waybar", { preset = "subtle", mask_threshold = 0.05 })
+    hg.layer("swaync")
+    hg.layer("quickshell:bezel", { preset = "ui", mask_threshold = 0.3 })
+    hg.layer("debug-panel", { exclude = true })
+
+    -- Presets
+    hg.preset("clear", {
+        glass_opacity = 0.8,
+        blur_strength = 1.5,
+        dark = { brightness = 0.7 },
+        light = { brightness = 1.2 },
+    })
+
+    hg.preset("contrasted", {
+        inherits = "high_contrast",
+        contrast = 1.2,
+        adaptive_dim = 1.5,
+        dark = { tint_color = 0x02142aa9 },
+    })
+end
+```
+
+### Legacy .conf config
+
+_Deprecated as of Hyprland 0.55, but still supported._
 
 ```ini
 plugin:hyprglass {
     default_theme = dark
-    default_preset = default
+    default_preset = clear
+    tint_color = 0x8899aa22
 
-    brightness = 0.9                 # global override
-    dark:brightness = 0.82           # built-in dark theme override
-    light:adaptive_boost = 0.5       # built-in light theme override
+    brightness = 0.9
+    dark:brightness = 0.82
+    light:adaptive_boost = 0.5
 
-    # Custom preset: shared + per-theme variants
     preset = name:clear, glass_opacity:0.8, blur_strength:1.5
     preset = name:clear:dark, brightness:0.7
     preset = name:clear:light, brightness:1.2
+
+    preset = name:contrasted, inherits:high_contrast, contrast:1.2, adaptive_dim:1.5
+    preset = name:contrasted:dark, tint_color:0x02142aa9
+
+    layers {
+        enabled = 1
+        namespaces = waybar, swaync, quickshell:bezel
+        exclude_namespaces = debug-panel
+        preset = subtle
+        namespace_presets = quickshell:bezel:ui
+        namespace_mask_thresholds = waybar=0.05, quickshell:bezel=0.3
+    }
 }
 ```
 
-### Global-only settings
+### Global settings
 
 | Option | Type | Default | Description |
 |---|---|---|---|
-| `enabled` | int | `1` | Enable/disable the effect globally (0 or 1). Per-window tags `hyprglass_enabled` / `hyprglass_disabled` override this. |
+| `enabled` | bool | `true` (`1` in .conf) | Enable/disable the effect globally. Per-window tags override this. |
 | `default_theme` | string | `dark` | Default theme: `dark` or `light` |
 | `default_preset` | string | `default` | Default preset name |
 
 ### Overridable settings
 
-Set globally, per theme with `dark:` / `light:` prefix, or in a preset.
+Set globally, per theme (`dark:` / `light:` prefix in .conf, or `dark = {}` / `light = {}` table in Lua), or in a preset.
+
+Settings resolve through: **preset chain** (theme variant, shared, inherited) then **theme override** then **global value** then **hardcoded default**.
 
 | Option | Type | Global Default | Dark Default | Light Default | Description |
 |---|---|---|---|---|---|
-| `blur_strength` | float | `2.0` | — | — | Blur radius scale (`value × 12.0` px) |
+| `blur_strength` | float | `2.0` | — | — | Blur radius scale (`value * 12.0` px) |
 | `blur_iterations` | int | `3` | — | — | Gaussian blur passes (1-5) |
 | `refraction_strength` | float | `0.6` | — | — | Edge refraction intensity (0.0-1.0) |
 | `chromatic_aberration` | float | `0.5` | — | — | Spectral dispersion at edges (0.0-1.0) |
@@ -108,165 +153,141 @@ Set globally, per theme with `dark:` / `light:` prefix, or in a preset.
 
 `—` in Global Default = falls through to per-theme default. `—` in Dark/Light = inherits global value.
 
-### Per-window enable / disable
+### Layer surfaces
+
+The glass effect can be applied to layer surfaces (bars, docks, widgets). **Disabled by default.**
+
+The effect uses the layer surface opacity as a mask:
+- Partially transparent content (down to ~0.004 opacity) **triggers** the glass effect
+- Fully transparent areas are ignored
+
+**Caveat:** Layer shadows count as visible content. Use `mask_threshold` to set an alpha cutoff higher than your shadow opacity.
+
+#### Lua config
+
+```lua
+hg.config({ layers = { enabled = true } })
+
+-- Each call whitelists the namespace and optionally configures it
+hg.layer("waybar", { preset = "subtle", mask_threshold = 0.05 })
+hg.layer("swaync")
+hg.layer("quickshell:bezel", { preset = "ui", mask_threshold = 0.3 })
+hg.layer("debug-panel", { exclude = true })
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `preset` | string | Preset override for this layer |
+| `mask_threshold` | float | Alpha threshold (pixels below this are not glassed). Default `0.001` |
+| `exclude` | bool | Blacklist this namespace instead of whitelisting it |
+
+#### Legacy .conf config
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `layers:enabled` | bool | `false` (`0` in .conf) | Enable glass on layer surfaces |
+| `layers:namespaces` | string | `""` | Comma-separated namespace whitelist. Empty = all layers |
+| `layers:exclude_namespaces` | string | `""` | Comma-separated namespace blacklist (priority over whitelist) |
+| `layers:preset` | string | `""` | Preset override for all layers |
+| `layers:namespace_presets` | string | `""` | Per-namespace preset (`ns:preset` pairs, comma-separated) |
+| `layers:namespace_mask_thresholds` | string | `""` | Per-namespace alpha threshold (`ns=value` pairs, comma-separated) |
+
+> Layer support hooks into Hyprland's internal render pipeline. This is version-sensitive and may break across Hyprland updates.
+
+### Per-window overrides
+
+Control the effect, theme, and preset per window via tags.
+
+#### Enable / disable
 
 Override the global `enabled` setting per window via tags:
 
 - `hyprglass_disabled` — force the effect off on this window (wins over `hyprglass_enabled` if both present).
-- `hyprglass_enabled` — force the effect on this window. Useful with global `enabled = 0` for a whitelist.
+- `hyprglass_enabled` — force the effect on this window. Useful with global `enabled = false` for a whitelist.
 
-```ini
-# Blacklist mode: effect on by default, disable for specific apps
-windowrule = tag +hyprglass_disabled, class:mpv
-windowrule = tag +hyprglass_disabled, fullscreen:1
-
-# Whitelist mode: effect off by default, enable only for specific apps
-plugin:hyprglass {
-    enabled = 0
-}
-windowrule = tag +hyprglass_enabled, class:kitty
-```
-
-Or on the fly:
-```bash
-hyprctl dispatch tagwindow +hyprglass_disabled
-```
-
-### Theme detection
+#### Theme
 
 Each window's theme is resolved as:
 1. **Window tag** `hyprglass_theme_light` or `hyprglass_theme_dark`
 2. **Fallback** to `default_theme`
 
-Set via window rules:
-```ini
-windowrule = tag +hyprglass_theme_light, class:firefox
+#### Preset
+
+Assign via window rules:
+- `hyprglass_preset_<name>` — override `default_preset` for this window
+
+#### Examples
+
+**Lua:**
+```lua
+hl.window_rule({ match = { class = "mpv" },       tag = "+hyprglass_disabled" })
+hl.window_rule({ match = { fullscreen = true },    tag = "+hyprglass_disabled" })
+hl.window_rule({ match = { class = "firefox" },    tag = "+hyprglass_theme_light" })
+hl.window_rule({ match = { class = "myterminal" }, tag = "+hyprglass_preset_high_contrast" })
 ```
 
-Or on the fly:
+**Legacy .conf:**
+```ini
+windowrule = tag +hyprglass_disabled, class:mpv
+windowrule = tag +hyprglass_disabled, fullscreen:1
+windowrule = tag +hyprglass_theme_light, class:firefox
+windowrule = tag +hyprglass_preset_high_contrast, class:myterminal
+```
+
+**On the fly:**
 ```bash
+hyprctl dispatch tagwindow +hyprglass_disabled
 hyprctl dispatch tagwindow +hyprglass_theme_dark
+hyprctl dispatch tagwindow +hyprglass_preset_subtle
 ```
 
 ### Presets
 
-Presets are named config overrides. They can be **built-in** (always available) or **user-defined** via the `preset` keyword. User-defined presets with the same name override built-in ones.
+Presets are named config overrides. They can be **built-in** or **user-defined**. User presets with the same name override built-in ones.
 
-Each preset can have:
-
-- **Shared values** (theme-agnostic): `preset = name:mypreset, blur_strength:1.5`
-- **Dark variant**: `preset = name:mypreset:dark, brightness:0.7`
-- **Light variant**: `preset = name:mypreset:light, brightness:1.2`
-- **Inheritance**: `preset = name:mypreset, inherits:otherpreset, ...`
-
-Assign a preset to a window via tags:
-```ini
-windowrule = tag +hyprglass_preset_high_contrast, class:myterminal
-```
-
-Or on the fly:
-```bash
-hyprctl dispatch tagwindow +hyprglass_preset_subtle
-```
+Each preset can have shared values (theme-agnostic), a dark variant, a light variant, and can inherit from another preset.
 
 #### Built-in presets
 
-These are always available without any config. Use `default_preset` or per-window tags to activate them.
+Always available. Activate via `default_preset` or per-window tags.
 
 | Preset | Description |
 |---|---|
 | `high_contrast` | Punchy colors, strong tinting, good contrast between dark and light themes. Lower blur, stronger refraction. |
 | `subtle` | Minimal glass effect. Light blur, reduced refraction and highlights. |
 | `clear` | Minimal transparent effect. Like a transparent rounded border glass plate. |
-| `glass` | Solid glass block effect with a lot of chromatic aberration.. |
+| `glass` | Solid glass block effect with a lot of chromatic aberration. |
 
-To use a built-in preset as default:
-```ini
-plugin:hyprglass {
-    default_preset = high_contrast
-}
-```
-
-To override a built-in preset, redefine it:
-```ini
-plugin:hyprglass {
-    # Override the built-in high_contrast preset's shared blur
-    preset = name:high_contrast, blur_strength:2.0
-}
-```
-
-**Note:** Those presets are not totaly fine-tuned, but they are a good starting point. Please submit improvments or your own presets through issues or PR (with some screenshots).
+**Note:** These presets are starting points. Submit improvements or your own presets through issues or PRs (with screenshots).
 
 #### User-defined presets
 
-Define your own presets, in your Hyprland config, with :
-
-```ini
-plugin:hyprglass {
-    # Clear preset — transparent look, app chooses this via tag
-    preset = name:clear, blur_strength:0.2, blur_iteration: 1, refraction_strength: 1, lens_distortion: 1
-    preset = name:clear:dark, brightness:0.7, contrast:1.0
-    preset = name:clear:light, brightness:1.2, contrast:0.95
-
-    # Contrasted — inherits from high_contrast, overrides tint
-    preset = name:contrasted, inherits:high_contrast, contrast:1.2, adaptive_dim:1.5
-    preset = name:contrasted:dark, tint_color:0x02142aa9
-}
+**Lua (table syntax):**
+```lua
+hg.preset("clear", {
+    glass_opacity = 0.8,
+    blur_strength = 1.5,
+    inherits = "subtle",
+    dark = { brightness = 0.7 },
+    light = { brightness = 1.2 },
+})
 ```
 
-*Increase two last digits of tint colors for more opacity of tint color and more contrast with background*
-
-### Layer surfaces (BETA)
-The glass effect can also be applied to layer surfaces (bars, docks, widgets).
-
-__Disabled by default.__
-
-
-Fully transparent layers area will be ignored, that's wanted, just use some very small opacity on the area backgrounds you want to trigger the effect on.
-
-It works by using a mask using layer surface opacity:
-* **Partialy** transparent layer surface (down to 1/255 opacity, ~0.004) **WILL TRIGGER** the Hyprglass effect
-* **Fully** transparent layer surfaces are totaly ignored and **WILL NOT TRIGGER** the Hyprglass effect
-
-
-**Why:** _It's because layers can come in a vast variety of forms, and we have no way to differenciate real transparent surface that needs to be blurred from transparent surface or claimed space that needs to be ignored._
-
-**Caveat:** By default, layer shadows will be considered as part of the glass surface.
-- Either use `namespace_mask_thresholds` to set a per-namespace alpha threshold higher than your shadow opacity but lower than your content opacity.
-- Alternatively, render shadows on a separate layer surface not included in the Hyprglass whitelist.
-
-
-
-| Option | Type | Default | Description |
-|---|---|---|---|
-| `layers:enabled` | int | `0` | Enable glass on layer surfaces (0 or 1) |
-| `layers:namespaces` | string | `""` | Comma-separated namespace whitelist. Empty = all layers |
-| `layers:exclude_namespaces` | string | `""` | Comma-separated namespace blacklist. Takes priority over whitelist |
-| `layers:preset` | string | `""` | Preset override for all layers. Empty = use `default_preset` |
-| `layers:namespace_presets` | string | `""` | Per-namespace preset overrides (`ns:preset` pairs, comma-separated). Takes priority over `layers:preset` |
-| `layers:namespace_mask_thresholds` | string | `""` | Per-namespace alpha threshold for the glass mask (`ns=value` pairs, comma-separated). Pixels with alpha below the threshold are not glassed. Default threshold is `0.001`. Set to `0.0` for full-area glass regardless of surface content |
-
-```ini
-plugin:hyprglass {
-    layers {
-        enabled = 1
-        namespaces = bar, dock, bezel, notifications
-        exclude_namespaces = some-debug-panel
-        preset = subtle
-        namespace_presets = waybar:bar-glass, notifications:notif-glass
-
-        # Bezel: glass only on solid content (alpha >= 0.3), shadows pass through
-        # Background overlay: full-area glass regardless of content
-        namespace_mask_thresholds = quickshell:bezel=0.3, background=0.0
-    }
-}
+**Lua (string syntax, backward compat):**
+```lua
+hg.preset("name:clear, glass_opacity:0.8, blur_strength:1.5")
+hg.preset("name:clear:dark, brightness:0.7")
 ```
 
-If `namespaces` is empty, all layers are included except those in `exclude_namespaces`.  `
-If `namespaces` is set, only listed namespaces are included — `exclude_namespaces` still takes priority.
+**Legacy .conf:**
+```ini
+preset = name:clear, glass_opacity:0.8, blur_strength:1.5
+preset = name:clear:dark, brightness:0.7
+preset = name:clear:light, brightness:1.2
+preset = name:contrasted, inherits:high_contrast, contrast:1.2
+```
 
-> **Note:** Layer support hooks into Hyprland's internal render pipeline. This is version-sensitive and may break across Hyprland updates.
-
+*Tip: increase the last two hex digits of `tint_color` for more tint opacity.*
 
 ## How It Works
 
@@ -283,7 +304,7 @@ The window/layer is modeled as a **thick convex glass slab**. The rendering pipe
 9. **Fresnel edge glow** — Schlick-based fresnel approximation at the glass edge.
 10. **Specular highlight + inner shadow** — Top-biased highlight and bottom-rim shadow for depth.
 
-For windows, the plugin integrates with Hyprland's render pass system as a `DECORATION_LAYER_BOTTOM` decoration, drawing before the window surface so the glass shows through transparent windows. For layer surfaces, the plugin hooks `CHyprRenderer::renderLayer` and uses a temp FBO redirect: the background is sampled and blurred, then Hyprland's surface rendering is redirected into a transparent temporary framebuffer to capture the surface's exact alpha. A post-surface pass then composites the glass effect (masked to visible content only) and the surface content back onto the main framebuffer in a single shader pass.
+For windows, the plugin integrates with Hyprland's render pass system as a `DECORATION_LAYER_BOTTOM` decoration, drawing before the window surface so the glass shows through transparent windows. For layer surfaces, the plugin hooks `renderLayer` and uses a temp FBO redirect: the background is sampled and blurred, then Hyprland's surface rendering is redirected into a transparent temporary framebuffer to capture the surface's exact alpha. A post-surface pass then composites the glass effect (masked to visible content only) and the surface content back onto the main framebuffer in a single shader pass.
 
 ## Unloading
 
