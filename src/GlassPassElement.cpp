@@ -3,27 +3,25 @@
 #include "Globals.hpp"
 #include "WindowGeometry.hpp"
 
-#include <hyprland/src/render/OpenGL.hpp>
-
 CGlassPassElement::CGlassPassElement(const SGlassPassData& data)
     : m_data(data) {}
 
-void CGlassPassElement::draw(const CRegion& damage) {
-    if (!m_data.decoration)
-        return;
+std::vector<UP<IPassElement>> CGlassPassElement::draw() {
+    if (m_data.decoration.valid())
+        m_data.decoration->renderPass(g_pHyprRenderer->m_renderData.pMonitor.lock(), m_data.alpha);
 
-    m_data.decoration->renderPass(g_pHyprOpenGL->m_renderData.pMonitor.lock(), m_data.alpha);
+    return {};
 }
 
 std::optional<CBox> CGlassPassElement::boundingBox() {
-    if (!m_data.decoration)
+    if (!m_data.decoration.valid())
         return std::nullopt;
 
     auto window = m_data.decoration->getOwner();
     if (!window)
         return std::nullopt;
 
-    const auto monitor = g_pHyprOpenGL->m_renderData.pMonitor.lock();
+    const auto monitor = g_pHyprRenderer->m_renderData.pMonitor.lock();
     auto box = WindowGeometry::computeWindowBox(window, monitor);
     if (!box)
         return std::nullopt;
@@ -43,7 +41,7 @@ bool CGlassPassElement::needsLiveBlur() {
     // in the padded sampling region, causing blinking artifacts.
     // Layers don't need this — they have their own blur cache with
     // scene generation tracking.
-    return m_data.decoration && m_data.decoration->getOwner();
+    return m_data.decoration.valid() && m_data.decoration->getOwner();
 }
 
 bool CGlassPassElement::needsPrecomputeBlur() {
@@ -51,5 +49,5 @@ bool CGlassPassElement::needsPrecomputeBlur() {
 }
 
 bool CGlassPassElement::disableSimplification() {
-    return m_data.decoration && m_data.decoration->getOwner();
+    return m_data.decoration.valid() && m_data.decoration->getOwner();
 }

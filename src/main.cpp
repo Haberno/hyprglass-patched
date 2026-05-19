@@ -31,21 +31,20 @@ static void onNewWindow(PHLWINDOW window) {
 
 static void onCloseWindow(PHLWINDOW window) {
     std::erase_if(g_pGlobalState->decorations, [&window](const auto& decoration) {
-        auto locked = decoration.lock();
-        return !locked || locked->getOwner() == window;
+        auto* deco = decoration.get();
+        return !deco || deco->getOwner() == window;
     });
 }
 
 // ── Layer surface support ────────────────────────────────────────────────────
 
 // Parse comma-separated config string into a set of trimmed values.
-static void parseCommaSeparated(Hyprlang::STRING const* configPtr, std::unordered_set<std::string>& out) {
+static void parseCommaSeparated(StringConfigPtr configPtr, std::unordered_set<std::string>& out) {
     out.clear();
-    if (!configPtr) return;
-    const char* raw = *configPtr;
-    if (!raw || raw[0] == '\0') return;
+    const auto raw = readStringConfig(configPtr);
+    if (raw.empty()) return;
 
-    std::istringstream stream(raw);
+    std::istringstream stream{std::string(raw)};
     std::string token;
     while (std::getline(stream, token, ',')) {
         auto start = token.find_first_not_of(" \t");
@@ -57,12 +56,11 @@ static void parseCommaSeparated(Hyprlang::STRING const* configPtr, std::unordere
 
 // Parse comma-separated "key<sep>value" pairs. The callback receives (key, valueStr) for each pair.
 template <typename Fn>
-static void parseKeyValuePairs(Hyprlang::STRING const* configPtr, char separator, Fn&& callback) {
-    if (!configPtr) return;
-    const char* raw = *configPtr;
-    if (!raw || raw[0] == '\0') return;
+static void parseKeyValuePairs(StringConfigPtr configPtr, char separator, Fn&& callback) {
+    const auto raw = readStringConfig(configPtr);
+    if (raw.empty()) return;
 
-    std::istringstream stream(raw);
+    std::istringstream stream{std::string(raw)};
     std::string token;
     while (std::getline(stream, token, ',')) {
         auto sepPos = token.rfind(separator);
@@ -114,9 +112,9 @@ static bool shouldGlassLayer(PHLLS layerSurface) {
     return include.contains(ns);
 }
 
-using renderLayerFn = void (*)(CHyprRenderer*, PHLLS, PHLMONITOR, const Time::steady_tp&, bool, bool);
+using renderLayerFn = void (*)(Render::IHyprRenderer*, PHLLS, PHLMONITOR, const Time::steady_tp&, bool, bool);
 
-static void hkRenderLayer(CHyprRenderer* thisptr, PHLLS layerSurface, PHLMONITOR monitor,
+static void hkRenderLayer(Render::IHyprRenderer* thisptr, PHLLS layerSurface, PHLMONITOR monitor,
                            const Time::steady_tp& now, bool popups, bool lockscreen) {
     const auto& config = g_pGlobalState->config;
 
@@ -208,6 +206,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     static auto onPreConfigReload = Event::bus()->m_events.config.preReload.listen([&]() { clearPendingPresets(); });
 
     static auto onConfigReloaded = Event::bus()->m_events.config.reloaded.listen([&]() {
+        initConfigPointers(PHANDLE, g_pGlobalState->config);
         commitPendingPresets();
         validateConfig();
         parseLayerNamespaceFilters();
@@ -219,7 +218,8 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
     // Shadows must be enabled for the glass effect to sample the correct background.
     // Force-enable if the user has disabled them.
-    static auto* const PSHADOWENABLED = (Hyprlang::INT* const*)g_pConfigManager->getConfigValuePtr("decoration:shadow:enabled");
+    const auto shadowEnabled = Config::mgr()->getConfigValue("decoration:shadow:enabled");
+    auto* const PSHADOWENABLED = reinterpret_cast<Hyprlang::INT* const*>(shadowEnabled.dataptr);
     if (PSHADOWENABLED && !**PSHADOWENABLED) {
         HyprlandAPI::invokeHyprctlCommand("keyword", "decoration:shadow:enabled true");
     }
@@ -233,7 +233,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     // Hook renderLayer for layer surface glass support
     auto renderLayerMatches = HyprlandAPI::findFunctionsByName(PHANDLE, "renderLayer");
     for (const auto& match : renderLayerMatches) {
-        // Match the overload: CHyprRenderer::renderLayer(PHLLS, PHLMONITOR, steady_tp, bool, bool)
+        // Match the overload: Render::IHyprRenderer::renderLayer(PHLLS, PHLMONITOR, steady_tp, bool, bool)
         if (match.demangled.contains("renderLayer") && match.demangled.contains("LayerSurface")) {
             g_pGlobalState->renderLayerHook = HyprlandAPI::createFunctionHook(PHANDLE, match.address, (void*)hkRenderLayer);
             if (g_pGlobalState->renderLayerHook)
@@ -251,6 +251,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     }
 
     HyprlandAPI::reloadConfig();
+    initConfigPointers(PHANDLE, g_pGlobalState->config);
     validateConfig();
     parseLayerNamespaceFilters();
 
@@ -258,18 +259,23 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
-    for (auto& decoration : g_pGlobalState->decorations) {
-        auto locked = decoration.lock();
-        if (locked) {
-            auto owner = locked->getOwner();
-            if (owner)
-                owner->removeWindowDeco(locked.get());
-        }
-    }
+    if (!g_pGlobalState)
+        return;
 
     g_pHyprRenderer->m_renderPass.removeAllOfType("CGlassPassElement");
     g_pHyprRenderer->m_renderPass.removeAllOfType("CGlassLayerPassElement");
     g_pHyprRenderer->m_renderPass.removeAllOfType("CGlassLayerCompositeElement");
+
+    for (auto& decoration : g_pGlobalState->decorations) {
+        if (auto* deco = decoration.get())
+            HyprlandAPI::removeWindowDecoration(PHANDLE, deco);
+    }
+    g_pGlobalState->decorations.clear();
+
+    if (g_pGlobalState->renderLayerHook) {
+        HyprlandAPI::removeFunctionHook(PHANDLE, g_pGlobalState->renderLayerHook);
+        g_pGlobalState->renderLayerHook = nullptr;
+    }
 
     g_pGlobalState->layerSurfaces.clear();
     g_pGlobalState->shaderManager.destroy();
