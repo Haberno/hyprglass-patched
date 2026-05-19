@@ -1,9 +1,34 @@
 
+## [v0.6.0](https://github.com/Hyprnux/hyprglass/compare/v0.5.0...v0.6.0) - 2026-05-19
+
+### Bug Fixes
+
+* clean up decoration lifetime on unload
+* stabilize Hyprland 0.55 plugin integration
+
+### Build System
+
+* update hyprland compatibility to v0.55.2
+
+### Documentation
+
+* add Lua config example
+* **configuration:** reorganize docs + enhance lua/conf doc ([#16](https://github.com/Hyprnux/hyprglass/issues/16))
+
+### Features
+
+* **configuration:** improve lua configuration using lua functions ([#16](https://github.com/Hyprnux/hyprglass/issues/16))
+
+
 ## [v0.5.0](https://github.com/Hyprnux/hyprglass/compare/v0.4.1...v0.5.0) - 2026-05-06
 
 ### Bug Fixes
 
 * fading workspace  animations were not fading the glass layer ([#24](https://github.com/Hyprnux/hyprglass/issues/24))
+
+### Chores
+
+* **release:** v0.5.0 [skip ci]
 
 ### Features
 
