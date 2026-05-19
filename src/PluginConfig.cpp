@@ -4,92 +4,120 @@
 
 #include <algorithm>
 #include <charconv>
+#include <hyprland/src/config/ConfigManager.hpp>
+#include <hyprland/src/config/values/ConfigValues.hpp>
 #include <hyprland/src/helpers/Color.hpp>
 #include <hyprland/src/plugins/PluginAPI.hpp>
 
+extern "C" {
+#include <lauxlib.h>
+#include <lua.h>
+}
+
 // ── Config registration ──────────────────────────────────────────────────────
 
+namespace {
+
+template <typename T, typename Default>
+static void addConfigValue(HANDLE handle, const char* name, Default defaultValue) {
+    HyprlandAPI::addConfigValueV2(handle,
+        Config::Values::makeConfigValue<T>(name, "", defaultValue, Config::Values::valueOptions_t<T>{}));
+}
+
+static int handleLuaPreset(lua_State* L) {
+    if (lua_gettop(L) < 1 || !lua_isstring(L, 1))
+        return luaL_error(L, "hyprglass.preset expects a preset definition string");
+
+    const auto result = handlePresetKeyword(ConfigKeys::PRESET_KEYWORD, lua_tostring(L, 1));
+    if (result.error)
+        return luaL_error(L, "%s", result.getError());
+
+    return 0;
+}
+
+} // namespace
+
 void registerConfig(HANDLE handle) {
-    HyprlandAPI::addConfigValue(handle, ConfigKeys::ENABLED, Hyprlang::INT{1});
-    HyprlandAPI::addConfigValue(handle, ConfigKeys::DEFAULT_THEME, Hyprlang::STRING{"dark"});
-    HyprlandAPI::addConfigValue(handle, ConfigKeys::DEFAULT_PRESET, Hyprlang::STRING{"default"});
+    addConfigValue<Config::Values::Int>(handle, ConfigKeys::ENABLED, Config::INTEGER{1});
+    addConfigValue<Config::Values::String>(handle, ConfigKeys::DEFAULT_THEME, Config::STRING{"dark"});
+    addConfigValue<Config::Values::String>(handle, ConfigKeys::DEFAULT_PRESET, Config::STRING{"default"});
 
     // Layer surface support
-    HyprlandAPI::addConfigValue(handle, ConfigKeys::LAYERS_ENABLED, Hyprlang::INT{0});
-    HyprlandAPI::addConfigValue(handle, ConfigKeys::LAYERS_NAMESPACES, Hyprlang::STRING{""});
-    HyprlandAPI::addConfigValue(handle, ConfigKeys::LAYERS_EXCLUDE_NAMESPACES, Hyprlang::STRING{""});
-    HyprlandAPI::addConfigValue(handle, ConfigKeys::LAYERS_PRESET, Hyprlang::STRING{""});
-    HyprlandAPI::addConfigValue(handle, ConfigKeys::LAYERS_NAMESPACE_PRESETS, Hyprlang::STRING{""});
-    HyprlandAPI::addConfigValue(handle, ConfigKeys::LAYERS_NAMESPACE_MASK_THRESHOLDS, Hyprlang::STRING{""});
+    addConfigValue<Config::Values::Int>(handle, ConfigKeys::LAYERS_ENABLED, Config::INTEGER{0});
+    addConfigValue<Config::Values::String>(handle, ConfigKeys::LAYERS_NAMESPACES, Config::STRING{});
+    addConfigValue<Config::Values::String>(handle, ConfigKeys::LAYERS_EXCLUDE_NAMESPACES, Config::STRING{});
+    addConfigValue<Config::Values::String>(handle, ConfigKeys::LAYERS_PRESET, Config::STRING{});
+    addConfigValue<Config::Values::String>(handle, ConfigKeys::LAYERS_NAMESPACE_PRESETS, Config::STRING{});
+    addConfigValue<Config::Values::String>(handle, ConfigKeys::LAYERS_NAMESPACE_MASK_THRESHOLDS, Config::STRING{});
 
     // Global level — real defaults for effect settings,
     // sentinel for theme-sensitive settings (fallback to hardcoded theme defaults)
-    HyprlandAPI::addConfigValue(handle, ConfigKeys::BLUR_STRENGTH, Hyprlang::FLOAT{GlobalDefaults::BLUR_STRENGTH});
-    HyprlandAPI::addConfigValue(handle, ConfigKeys::BLUR_ITERATIONS, Hyprlang::INT{GlobalDefaults::BLUR_ITERATIONS});
-    HyprlandAPI::addConfigValue(handle, ConfigKeys::REFRACTION_STRENGTH, Hyprlang::FLOAT{GlobalDefaults::REFRACTION_STRENGTH});
-    HyprlandAPI::addConfigValue(handle, ConfigKeys::CHROMATIC_ABERRATION, Hyprlang::FLOAT{GlobalDefaults::CHROMATIC_ABERRATION});
-    HyprlandAPI::addConfigValue(handle, ConfigKeys::FRESNEL_STRENGTH, Hyprlang::FLOAT{GlobalDefaults::FRESNEL_STRENGTH});
-    HyprlandAPI::addConfigValue(handle, ConfigKeys::SPECULAR_STRENGTH, Hyprlang::FLOAT{GlobalDefaults::SPECULAR_STRENGTH});
-    HyprlandAPI::addConfigValue(handle, ConfigKeys::GLASS_OPACITY, Hyprlang::FLOAT{GlobalDefaults::GLASS_OPACITY});
-    HyprlandAPI::addConfigValue(handle, ConfigKeys::EDGE_THICKNESS, Hyprlang::FLOAT{GlobalDefaults::EDGE_THICKNESS});
-    HyprlandAPI::addConfigValue(handle, ConfigKeys::TINT_COLOR, Hyprlang::INT{GlobalDefaults::TINT_COLOR});
-    HyprlandAPI::addConfigValue(handle, ConfigKeys::LENS_DISTORTION, Hyprlang::FLOAT{GlobalDefaults::LENS_DISTORTION});
-    HyprlandAPI::addConfigValue(handle, ConfigKeys::BRIGHTNESS, SENTINEL_FLOAT);
-    HyprlandAPI::addConfigValue(handle, ConfigKeys::CONTRAST, SENTINEL_FLOAT);
-    HyprlandAPI::addConfigValue(handle, ConfigKeys::SATURATION, SENTINEL_FLOAT);
-    HyprlandAPI::addConfigValue(handle, ConfigKeys::VIBRANCY, SENTINEL_FLOAT);
-    HyprlandAPI::addConfigValue(handle, ConfigKeys::VIBRANCY_DARKNESS, SENTINEL_FLOAT);
-    HyprlandAPI::addConfigValue(handle, ConfigKeys::ADAPTIVE_DIM, SENTINEL_FLOAT);
-    HyprlandAPI::addConfigValue(handle, ConfigKeys::ADAPTIVE_BOOST, SENTINEL_FLOAT);
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::BLUR_STRENGTH, Config::FLOAT{GlobalDefaults::BLUR_STRENGTH});
+    addConfigValue<Config::Values::Int>(handle, ConfigKeys::BLUR_ITERATIONS, Config::INTEGER{GlobalDefaults::BLUR_ITERATIONS});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::REFRACTION_STRENGTH, Config::FLOAT{GlobalDefaults::REFRACTION_STRENGTH});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::CHROMATIC_ABERRATION, Config::FLOAT{GlobalDefaults::CHROMATIC_ABERRATION});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::FRESNEL_STRENGTH, Config::FLOAT{GlobalDefaults::FRESNEL_STRENGTH});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::SPECULAR_STRENGTH, Config::FLOAT{GlobalDefaults::SPECULAR_STRENGTH});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::GLASS_OPACITY, Config::FLOAT{GlobalDefaults::GLASS_OPACITY});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::EDGE_THICKNESS, Config::FLOAT{GlobalDefaults::EDGE_THICKNESS});
+    addConfigValue<Config::Values::Int>(handle, ConfigKeys::TINT_COLOR, Config::INTEGER{GlobalDefaults::TINT_COLOR});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::LENS_DISTORTION, Config::FLOAT{GlobalDefaults::LENS_DISTORTION});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::BRIGHTNESS, Config::FLOAT{SENTINEL_FLOAT});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::CONTRAST, Config::FLOAT{SENTINEL_FLOAT});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::SATURATION, Config::FLOAT{SENTINEL_FLOAT});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::VIBRANCY, Config::FLOAT{SENTINEL_FLOAT});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::VIBRANCY_DARKNESS, Config::FLOAT{SENTINEL_FLOAT});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::ADAPTIVE_DIM, Config::FLOAT{SENTINEL_FLOAT});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::ADAPTIVE_BOOST, Config::FLOAT{SENTINEL_FLOAT});
 
     // Dark theme overrides — all sentinel (inherit from global)
-    HyprlandAPI::addConfigValue(handle, ConfigKeys::DARK_BLUR_STRENGTH, SENTINEL_FLOAT);
-    HyprlandAPI::addConfigValue(handle, ConfigKeys::DARK_BLUR_ITERATIONS, SENTINEL_INT);
-    HyprlandAPI::addConfigValue(handle, ConfigKeys::DARK_REFRACTION_STRENGTH, SENTINEL_FLOAT);
-    HyprlandAPI::addConfigValue(handle, ConfigKeys::DARK_CHROMATIC_ABERRATION, SENTINEL_FLOAT);
-    HyprlandAPI::addConfigValue(handle, ConfigKeys::DARK_FRESNEL_STRENGTH, SENTINEL_FLOAT);
-    HyprlandAPI::addConfigValue(handle, ConfigKeys::DARK_SPECULAR_STRENGTH, SENTINEL_FLOAT);
-    HyprlandAPI::addConfigValue(handle, ConfigKeys::DARK_GLASS_OPACITY, SENTINEL_FLOAT);
-    HyprlandAPI::addConfigValue(handle, ConfigKeys::DARK_EDGE_THICKNESS, SENTINEL_FLOAT);
-    HyprlandAPI::addConfigValue(handle, ConfigKeys::DARK_TINT_COLOR, SENTINEL_INT);
-    HyprlandAPI::addConfigValue(handle, ConfigKeys::DARK_LENS_DISTORTION, SENTINEL_FLOAT);
-    HyprlandAPI::addConfigValue(handle, ConfigKeys::DARK_BRIGHTNESS, SENTINEL_FLOAT);
-    HyprlandAPI::addConfigValue(handle, ConfigKeys::DARK_CONTRAST, SENTINEL_FLOAT);
-    HyprlandAPI::addConfigValue(handle, ConfigKeys::DARK_SATURATION, SENTINEL_FLOAT);
-    HyprlandAPI::addConfigValue(handle, ConfigKeys::DARK_VIBRANCY, SENTINEL_FLOAT);
-    HyprlandAPI::addConfigValue(handle, ConfigKeys::DARK_VIBRANCY_DARKNESS, SENTINEL_FLOAT);
-    HyprlandAPI::addConfigValue(handle, ConfigKeys::DARK_ADAPTIVE_DIM, SENTINEL_FLOAT);
-    HyprlandAPI::addConfigValue(handle, ConfigKeys::DARK_ADAPTIVE_BOOST, SENTINEL_FLOAT);
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::DARK_BLUR_STRENGTH, Config::FLOAT{SENTINEL_FLOAT});
+    addConfigValue<Config::Values::Int>(handle, ConfigKeys::DARK_BLUR_ITERATIONS, Config::INTEGER{SENTINEL_INT});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::DARK_REFRACTION_STRENGTH, Config::FLOAT{SENTINEL_FLOAT});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::DARK_CHROMATIC_ABERRATION, Config::FLOAT{SENTINEL_FLOAT});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::DARK_FRESNEL_STRENGTH, Config::FLOAT{SENTINEL_FLOAT});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::DARK_SPECULAR_STRENGTH, Config::FLOAT{SENTINEL_FLOAT});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::DARK_GLASS_OPACITY, Config::FLOAT{SENTINEL_FLOAT});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::DARK_EDGE_THICKNESS, Config::FLOAT{SENTINEL_FLOAT});
+    addConfigValue<Config::Values::Int>(handle, ConfigKeys::DARK_TINT_COLOR, Config::INTEGER{SENTINEL_INT});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::DARK_LENS_DISTORTION, Config::FLOAT{SENTINEL_FLOAT});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::DARK_BRIGHTNESS, Config::FLOAT{SENTINEL_FLOAT});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::DARK_CONTRAST, Config::FLOAT{SENTINEL_FLOAT});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::DARK_SATURATION, Config::FLOAT{SENTINEL_FLOAT});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::DARK_VIBRANCY, Config::FLOAT{SENTINEL_FLOAT});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::DARK_VIBRANCY_DARKNESS, Config::FLOAT{SENTINEL_FLOAT});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::DARK_ADAPTIVE_DIM, Config::FLOAT{SENTINEL_FLOAT});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::DARK_ADAPTIVE_BOOST, Config::FLOAT{SENTINEL_FLOAT});
 
     // Light theme overrides — all sentinel (inherit from global)
-    HyprlandAPI::addConfigValue(handle, ConfigKeys::LIGHT_BLUR_STRENGTH, SENTINEL_FLOAT);
-    HyprlandAPI::addConfigValue(handle, ConfigKeys::LIGHT_BLUR_ITERATIONS, SENTINEL_INT);
-    HyprlandAPI::addConfigValue(handle, ConfigKeys::LIGHT_REFRACTION_STRENGTH, SENTINEL_FLOAT);
-    HyprlandAPI::addConfigValue(handle, ConfigKeys::LIGHT_CHROMATIC_ABERRATION, SENTINEL_FLOAT);
-    HyprlandAPI::addConfigValue(handle, ConfigKeys::LIGHT_FRESNEL_STRENGTH, SENTINEL_FLOAT);
-    HyprlandAPI::addConfigValue(handle, ConfigKeys::LIGHT_SPECULAR_STRENGTH, SENTINEL_FLOAT);
-    HyprlandAPI::addConfigValue(handle, ConfigKeys::LIGHT_GLASS_OPACITY, SENTINEL_FLOAT);
-    HyprlandAPI::addConfigValue(handle, ConfigKeys::LIGHT_EDGE_THICKNESS, SENTINEL_FLOAT);
-    HyprlandAPI::addConfigValue(handle, ConfigKeys::LIGHT_TINT_COLOR, SENTINEL_INT);
-    HyprlandAPI::addConfigValue(handle, ConfigKeys::LIGHT_LENS_DISTORTION, SENTINEL_FLOAT);
-    HyprlandAPI::addConfigValue(handle, ConfigKeys::LIGHT_BRIGHTNESS, SENTINEL_FLOAT);
-    HyprlandAPI::addConfigValue(handle, ConfigKeys::LIGHT_CONTRAST, SENTINEL_FLOAT);
-    HyprlandAPI::addConfigValue(handle, ConfigKeys::LIGHT_SATURATION, SENTINEL_FLOAT);
-    HyprlandAPI::addConfigValue(handle, ConfigKeys::LIGHT_VIBRANCY, SENTINEL_FLOAT);
-    HyprlandAPI::addConfigValue(handle, ConfigKeys::LIGHT_VIBRANCY_DARKNESS, SENTINEL_FLOAT);
-    HyprlandAPI::addConfigValue(handle, ConfigKeys::LIGHT_ADAPTIVE_DIM, SENTINEL_FLOAT);
-    HyprlandAPI::addConfigValue(handle, ConfigKeys::LIGHT_ADAPTIVE_BOOST, SENTINEL_FLOAT);
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIGHT_BLUR_STRENGTH, Config::FLOAT{SENTINEL_FLOAT});
+    addConfigValue<Config::Values::Int>(handle, ConfigKeys::LIGHT_BLUR_ITERATIONS, Config::INTEGER{SENTINEL_INT});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIGHT_REFRACTION_STRENGTH, Config::FLOAT{SENTINEL_FLOAT});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIGHT_CHROMATIC_ABERRATION, Config::FLOAT{SENTINEL_FLOAT});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIGHT_FRESNEL_STRENGTH, Config::FLOAT{SENTINEL_FLOAT});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIGHT_SPECULAR_STRENGTH, Config::FLOAT{SENTINEL_FLOAT});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIGHT_GLASS_OPACITY, Config::FLOAT{SENTINEL_FLOAT});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIGHT_EDGE_THICKNESS, Config::FLOAT{SENTINEL_FLOAT});
+    addConfigValue<Config::Values::Int>(handle, ConfigKeys::LIGHT_TINT_COLOR, Config::INTEGER{SENTINEL_INT});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIGHT_LENS_DISTORTION, Config::FLOAT{SENTINEL_FLOAT});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIGHT_BRIGHTNESS, Config::FLOAT{SENTINEL_FLOAT});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIGHT_CONTRAST, Config::FLOAT{SENTINEL_FLOAT});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIGHT_SATURATION, Config::FLOAT{SENTINEL_FLOAT});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIGHT_VIBRANCY, Config::FLOAT{SENTINEL_FLOAT});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIGHT_VIBRANCY_DARKNESS, Config::FLOAT{SENTINEL_FLOAT});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIGHT_ADAPTIVE_DIM, Config::FLOAT{SENTINEL_FLOAT});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIGHT_ADAPTIVE_BOOST, Config::FLOAT{SENTINEL_FLOAT});
 
-    // Registered as unscoped because Hyprlang does not dispatch
-    // scoped keyword handlers inside the plugin special category.
+    // Legacy config keyword plus Lua-config callback for custom presets.
     HyprlandAPI::addConfigKeyword(handle, ConfigKeys::PRESET_KEYWORD, handlePresetKeyword, Hyprlang::SHandlerOptions{});
+    HyprlandAPI::addLuaFunction(handle, "hyprglass", "preset", handleLuaPreset);
 }
 
 // ── Config pointer initialization ────────────────────────────────────────────
 
 template <typename T>
-static auto* getStaticPtr(HANDLE handle, const char* key) {
-    return (T* const*)HyprlandAPI::getConfigValue(handle, key)->getDataStaticPtr();
+static auto* getStaticPtr(HANDLE /*handle*/, const char* key) {
+    return reinterpret_cast<T* const*>(Config::mgr()->getConfigValue(key).dataptr);
 }
 
 static void initOverridablePointers(HANDLE handle, SOverridableConfig& layer,
@@ -123,15 +151,15 @@ static void initOverridablePointers(HANDLE handle, SOverridableConfig& layer,
 
 void initConfigPointers(HANDLE handle, SPluginConfig& config) {
     config.enabled       = getStaticPtr<Hyprlang::INT>(handle, ConfigKeys::ENABLED);
-    config.defaultTheme  = (Hyprlang::STRING const*)HyprlandAPI::getConfigValue(handle, ConfigKeys::DEFAULT_THEME)->getDataStaticPtr();
-    config.defaultPreset = (Hyprlang::STRING const*)HyprlandAPI::getConfigValue(handle, ConfigKeys::DEFAULT_PRESET)->getDataStaticPtr();
+    config.defaultTheme  = getStaticPtr<Config::STRING>(handle, ConfigKeys::DEFAULT_THEME);
+    config.defaultPreset = getStaticPtr<Config::STRING>(handle, ConfigKeys::DEFAULT_PRESET);
 
     config.layersEnabled           = getStaticPtr<Hyprlang::INT>(handle, ConfigKeys::LAYERS_ENABLED);
-    config.layersNamespaces        = (Hyprlang::STRING const*)HyprlandAPI::getConfigValue(handle, ConfigKeys::LAYERS_NAMESPACES)->getDataStaticPtr();
-    config.layersExcludeNamespaces = (Hyprlang::STRING const*)HyprlandAPI::getConfigValue(handle, ConfigKeys::LAYERS_EXCLUDE_NAMESPACES)->getDataStaticPtr();
-    config.layersPreset            = (Hyprlang::STRING const*)HyprlandAPI::getConfigValue(handle, ConfigKeys::LAYERS_PRESET)->getDataStaticPtr();
-    config.layersNamespacePresets         = (Hyprlang::STRING const*)HyprlandAPI::getConfigValue(handle, ConfigKeys::LAYERS_NAMESPACE_PRESETS)->getDataStaticPtr();
-    config.layersNamespaceMaskThresholds = (Hyprlang::STRING const*)HyprlandAPI::getConfigValue(handle, ConfigKeys::LAYERS_NAMESPACE_MASK_THRESHOLDS)->getDataStaticPtr();
+    config.layersNamespaces        = getStaticPtr<Config::STRING>(handle, ConfigKeys::LAYERS_NAMESPACES);
+    config.layersExcludeNamespaces = getStaticPtr<Config::STRING>(handle, ConfigKeys::LAYERS_EXCLUDE_NAMESPACES);
+    config.layersPreset            = getStaticPtr<Config::STRING>(handle, ConfigKeys::LAYERS_PRESET);
+    config.layersNamespacePresets         = getStaticPtr<Config::STRING>(handle, ConfigKeys::LAYERS_NAMESPACE_PRESETS);
+    config.layersNamespaceMaskThresholds = getStaticPtr<Config::STRING>(handle, ConfigKeys::LAYERS_NAMESPACE_MASK_THRESHOLDS);
 
     initOverridablePointers(handle, config.global,
         ConfigKeys::BLUR_STRENGTH, ConfigKeys::BLUR_ITERATIONS,
@@ -349,28 +377,24 @@ void validateConfig() {
 
     const auto& config = g_pGlobalState->config;
 
-    if (config.defaultTheme) {
-        const char* theme = *config.defaultTheme;
-        if (!theme || (std::string_view(theme) != "dark" && std::string_view(theme) != "light")) {
+    const auto theme = readStringConfig(config.defaultTheme);
+    if (theme != "dark" && theme != "light") {
+        HyprlandAPI::addNotificationV2(PHANDLE, {
+            {"text", std::string("[hyprglass] Invalid default_theme '") + std::string(theme) + "', expected 'dark' or 'light'. Falling back to 'dark'."},
+            {"time", (uint64_t)5000},
+            {"color", CHyprColor{1.0, 0.8, 0.2, 1.0}},
+        });
+    }
+
+    const auto preset = readStringConfig(config.defaultPreset);
+    if (!preset.empty() && preset != "default") {
+        const auto& presets = g_pGlobalState->customPresets;
+        if (presets.find(std::string(preset)) == presets.end()) {
             HyprlandAPI::addNotificationV2(PHANDLE, {
-                {"text", std::string("[hyprglass] Invalid default_theme '") + (theme ? theme : "(null)") + "', expected 'dark' or 'light'. Falling back to 'dark'."},
+                {"text", std::string("[hyprglass] Unknown default_preset '") + std::string(preset) + "'. Using 'default' resolution chain."},
                 {"time", (uint64_t)5000},
                 {"color", CHyprColor{1.0, 0.8, 0.2, 1.0}},
             });
-        }
-    }
-
-    if (config.defaultPreset) {
-        const char* preset = *config.defaultPreset;
-        if (preset && preset[0] != '\0' && std::string_view(preset) != "default") {
-            const auto& presets = g_pGlobalState->customPresets;
-            if (presets.find(preset) == presets.end()) {
-                HyprlandAPI::addNotificationV2(PHANDLE, {
-                    {"text", std::string("[hyprglass] Unknown default_preset '") + preset + "'. Using 'default' resolution chain."},
-                    {"time", (uint64_t)5000},
-                    {"color", CHyprColor{1.0, 0.8, 0.2, 1.0}},
-                });
-            }
         }
     }
 }

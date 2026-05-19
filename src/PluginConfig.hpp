@@ -1,5 +1,6 @@
 #pragma once
 
+#include <hyprland/src/config/shared/Types.hpp>
 #include <hyprland/src/plugins/PluginAPI.hpp>
 #include <string>
 #include <string_view>
@@ -150,17 +151,23 @@ struct SCustomPreset {
     SPresetValues light;
 };
 
-struct SPluginConfig {
-    Hyprlang::INT* const*   enabled       = nullptr;
-    Hyprlang::STRING const*  defaultTheme  = nullptr;
-    Hyprlang::STRING const*  defaultPreset = nullptr;
+using StringConfigPtr = Config::STRING* const*;
 
-    Hyprlang::INT* const*    layersEnabled           = nullptr;
-    Hyprlang::STRING const*  layersNamespaces        = nullptr;
-    Hyprlang::STRING const*  layersExcludeNamespaces = nullptr;
-    Hyprlang::STRING const*  layersPreset            = nullptr;
-    Hyprlang::STRING const*  layersNamespacePresets         = nullptr;
-    Hyprlang::STRING const*  layersNamespaceMaskThresholds  = nullptr;
+inline std::string_view readStringConfig(StringConfigPtr ptr) {
+    return (ptr && *ptr) ? std::string_view(**ptr) : std::string_view{};
+}
+
+struct SPluginConfig {
+    Hyprlang::INT* const* enabled       = nullptr;
+    StringConfigPtr      defaultTheme  = nullptr;
+    StringConfigPtr      defaultPreset = nullptr;
+
+    Hyprlang::INT* const* layersEnabled                  = nullptr;
+    StringConfigPtr       layersNamespaces               = nullptr;
+    StringConfigPtr       layersExcludeNamespaces        = nullptr;
+    StringConfigPtr       layersPreset                   = nullptr;
+    StringConfigPtr       layersNamespacePresets         = nullptr;
+    StringConfigPtr       layersNamespaceMaskThresholds  = nullptr;
 
     SOverridableConfig global;
     SOverridableConfig dark;

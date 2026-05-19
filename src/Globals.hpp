@@ -6,6 +6,8 @@
 
 #include <hyprland/src/plugins/PluginAPI.hpp>
 #include <hyprland/src/render/Framebuffer.hpp>
+#include <hyprland/src/render/OpenGL.hpp>
+#include <hyprland/src/render/Renderer.hpp>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -23,7 +25,7 @@ struct SGlobalState {
     std::unordered_map<std::string, SCustomPreset> customPresets;
 
     // Shared blur temp framebuffer (reused across all decorations since they render sequentially)
-    CFramebuffer blurTempFramebuffer;
+    SP<Render::IFramebuffer> blurTempFramebuffer;
 
     // Layer surface glass state (one per tracked layer, keyed by raw pointer).
     // shared_ptr so CGlassLayerPassElement can hold a copy that survives map erasure mid-frame.
@@ -53,6 +55,8 @@ struct SGlobalState {
     // renderLayer hook
     CFunctionHook* renderLayerHook = nullptr;
 };
+
+using Render::GL::g_pHyprOpenGL;
 
 inline HANDLE                        PHANDLE = nullptr;
 inline std::unique_ptr<SGlobalState> g_pGlobalState;
