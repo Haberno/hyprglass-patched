@@ -31,8 +31,8 @@ static void onNewWindow(PHLWINDOW window) {
 
 static void onCloseWindow(PHLWINDOW window) {
     std::erase_if(g_pGlobalState->decorations, [&window](const auto& decoration) {
-        auto locked = decoration.lock();
-        return !locked || locked->getOwner() == window;
+        auto* deco = decoration.get();
+        return !deco || deco->getOwner() == window;
     });
 }
 
@@ -259,18 +259,23 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
-    for (auto& decoration : g_pGlobalState->decorations) {
-        auto locked = decoration.lock();
-        if (locked) {
-            auto owner = locked->getOwner();
-            if (owner)
-                owner->removeWindowDeco(locked.get());
-        }
-    }
+    if (!g_pGlobalState)
+        return;
 
     g_pHyprRenderer->m_renderPass.removeAllOfType("CGlassPassElement");
     g_pHyprRenderer->m_renderPass.removeAllOfType("CGlassLayerPassElement");
     g_pHyprRenderer->m_renderPass.removeAllOfType("CGlassLayerCompositeElement");
+
+    for (auto& decoration : g_pGlobalState->decorations) {
+        if (auto* deco = decoration.get())
+            HyprlandAPI::removeWindowDecoration(PHANDLE, deco);
+    }
+    g_pGlobalState->decorations.clear();
+
+    if (g_pGlobalState->renderLayerHook) {
+        HyprlandAPI::removeFunctionHook(PHANDLE, g_pGlobalState->renderLayerHook);
+        g_pGlobalState->renderLayerHook = nullptr;
+    }
 
     g_pGlobalState->layerSurfaces.clear();
     g_pGlobalState->shaderManager.destroy();

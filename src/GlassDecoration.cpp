@@ -90,7 +90,7 @@ void CGlassDecoration::draw(PHLMONITOR monitor, float const& alpha) {
     if (!g_pGlobalState || !resolveEnabled())
         return;
 
-    CGlassPassElement::SGlassPassData data{this, alpha};
+    CGlassPassElement::SGlassPassData data{m_self, alpha};
     g_pHyprRenderer->m_renderPass.add(makeUnique<CGlassPassElement>(data));
 
     const auto window = m_window.lock();

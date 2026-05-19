@@ -3,14 +3,15 @@
 #include <hyprland/src/render/pass/PassElement.hpp>
 #include <hyprutils/math/Box.hpp>
 #include <hyprutils/math/Region.hpp>
+#include <hyprland/src/helpers/memory/Memory.hpp>
 
 class CGlassDecoration;
 
 class CGlassPassElement : public IPassElement {
   public:
     struct SGlassPassData {
-        CGlassDecoration* decoration = nullptr;
-        float             alpha      = 1.0f;
+        WP<CGlassDecoration> decoration;
+        float                alpha = 1.0f;
     };
 
     explicit CGlassPassElement(const SGlassPassData& data);
