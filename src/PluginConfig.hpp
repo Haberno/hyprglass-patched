@@ -201,11 +201,13 @@ void initConfigPointers(HANDLE handle, SPluginConfig& config);
 // Preset keyword handler (registered via addConfigKeyword)
 Hyprlang::CParseResult handlePresetKeyword(const char* command, const char* value);
 
-// Clear pending presets before config re-parse (called from preConfigReload callback)
+// Clear pending presets/layers before config re-parse (called from preConfigReload callback)
 void clearPendingPresets();
+void clearPendingLayers();
 
-// Swap pending presets into active map (called from configReloaded callback)
+// Swap pending data into active maps (called from configReloaded callback)
 void commitPendingPresets();
+void commitPendingLayers();
 
 // Validate config values and notify user of misconfigurations
 void validateConfig();

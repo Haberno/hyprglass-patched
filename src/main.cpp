@@ -202,14 +202,18 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
             if (ws) if (auto mon = ws->m_monitor.lock()) g_pGlobalState->bumpSceneGeneration(mon.get());
         });
 
-    // Clear pending presets before config re-parse, commit after
-    static auto onPreConfigReload = Event::bus()->m_events.config.preReload.listen([&]() { clearPendingPresets(); });
+    // Clear pending presets/layers before config re-parse, commit after
+    static auto onPreConfigReload = Event::bus()->m_events.config.preReload.listen([&]() {
+        clearPendingPresets();
+        clearPendingLayers();
+    });
 
     static auto onConfigReloaded = Event::bus()->m_events.config.reloaded.listen([&]() {
         initConfigPointers(PHANDLE, g_pGlobalState->config);
         commitPendingPresets();
-        validateConfig();
         parseLayerNamespaceFilters();
+        commitPendingLayers(); // merge Lua layer() calls on top of string config
+        validateConfig();
     });
 
 

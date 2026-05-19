@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <charconv>
+#include <cstring>
 #include <hyprland/src/config/ConfigManager.hpp>
 #include <hyprland/src/config/values/ConfigValues.hpp>
 #include <hyprland/src/helpers/Color.hpp>
@@ -24,18 +25,12 @@ static void addConfigValue(HANDLE handle, const char* name, Default defaultValue
         Config::Values::makeConfigValue<T>(name, "", defaultValue, Config::Values::valueOptions_t<T>{}));
 }
 
-static int handleLuaPreset(lua_State* L) {
-    if (lua_gettop(L) < 1 || !lua_isstring(L, 1))
-        return luaL_error(L, "hyprglass.preset expects a preset definition string");
-
-    const auto result = handlePresetKeyword(ConfigKeys::PRESET_KEYWORD, lua_tostring(L, 1));
-    if (result.error)
-        return luaL_error(L, "%s", result.getError());
-
-    return 0;
-}
-
 } // namespace
+
+// Forward declarations for Lua handlers (need access to file-static preset/layer data below)
+static int handleLuaPreset(lua_State* L);
+static int handleLuaLayer(lua_State* L);
+static int handleLuaConfig(lua_State* L);
 
 void registerConfig(HANDLE handle) {
     addConfigValue<Config::Values::Int>(handle, ConfigKeys::ENABLED, Config::INTEGER{1});
@@ -108,9 +103,11 @@ void registerConfig(HANDLE handle) {
     addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIGHT_ADAPTIVE_DIM, Config::FLOAT{SENTINEL_FLOAT});
     addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIGHT_ADAPTIVE_BOOST, Config::FLOAT{SENTINEL_FLOAT});
 
-    // Legacy config keyword plus Lua-config callback for custom presets.
+    // Legacy config keyword plus Lua-config callbacks for custom presets and layers.
     HyprlandAPI::addConfigKeyword(handle, ConfigKeys::PRESET_KEYWORD, handlePresetKeyword, Hyprlang::SHandlerOptions{});
     HyprlandAPI::addLuaFunction(handle, "hyprglass", "preset", handleLuaPreset);
+    HyprlandAPI::addLuaFunction(handle, "hyprglass", "layer", handleLuaLayer);
+    HyprlandAPI::addLuaFunction(handle, "hyprglass", "config", handleLuaConfig);
 }
 
 // ── Config pointer initialization ────────────────────────────────────────────
@@ -370,6 +367,154 @@ void commitPendingPresets() {
 
     g_pGlobalState->customPresets = std::move(merged);
     s_pendingPresets.clear();
+}
+
+// ── Lua config handler ──────────────────────────────────────────────────────
+// hyprglass.config({ key = val, ... }) wraps hl.config({ plugin = { hyprglass = { ... } } })
+// Recursively walks the table and sets each leaf as "plugin.hyprglass.key.subkey"
+
+static void walkConfigTable(lua_State* L, int tableIdx, const std::string& prefix) {
+    lua_pushnil(L);
+    while (lua_next(L, tableIdx) != 0) {
+        if (!lua_isstring(L, -2)) { lua_pop(L, 1); continue; }
+
+        std::string fullKey = prefix + lua_tostring(L, -2);
+
+        if (lua_istable(L, -1)) {
+            walkConfigTable(L, lua_gettop(L), fullKey + ".");
+        } else {
+            // Push: hl.config({ ["plugin.hyprglass.xxx"] = value })
+            lua_getglobal(L, "hl");
+            lua_getfield(L, -1, "config");
+            lua_newtable(L);
+            lua_pushvalue(L, -4); // push the value
+            lua_setfield(L, -2, fullKey.c_str());
+            lua_call(L, 1, 0); // hl.config(table)
+            lua_pop(L, 1); // pop hl
+        }
+        lua_pop(L, 1); // pop value, keep key
+    }
+}
+
+static int handleLuaConfig(lua_State* L) {
+    if (lua_gettop(L) < 1 || !lua_istable(L, 1))
+        return luaL_error(L, "hyprglass.config: expected a table");
+
+    walkConfigTable(L, 1, "plugin.hyprglass.");
+    return 0;
+}
+
+// ── Lua preset handler (table + string) ─────────────────────────────────────
+
+static void readPresetValuesFromTable(lua_State* L, int tableIdx, SPresetValues& values) {
+    lua_pushnil(L);
+    while (lua_next(L, tableIdx) != 0) {
+        if (lua_isstring(L, -2) && lua_isnumber(L, -1)) {
+            const char* key = lua_tostring(L, -2);
+            std::string valStr = std::to_string(lua_tonumber(L, -1));
+            setPresetField(values, key, valStr);
+        }
+        lua_pop(L, 1);
+    }
+}
+
+static int handleLuaPreset(lua_State* L) {
+    int nargs = lua_gettop(L);
+
+    // Legacy: preset("name:clear, glass_opacity:0.8, ...")
+    if (nargs == 1 && lua_isstring(L, 1)) {
+        const auto result = handlePresetKeyword(ConfigKeys::PRESET_KEYWORD, lua_tostring(L, 1));
+        if (result.error)
+            return luaL_error(L, "%s", result.getError());
+        return 0;
+    }
+
+    // Table: preset("clear", { glass_opacity = 0.8, dark = { brightness = 0.7 }, ... })
+    if (nargs == 2 && lua_isstring(L, 1) && lua_istable(L, 2)) {
+        std::string baseName = lua_tostring(L, 1);
+        auto& preset = s_pendingPresets[baseName];
+        preset.name = baseName;
+
+        lua_pushnil(L);
+        while (lua_next(L, 2) != 0) {
+            if (!lua_isstring(L, -2)) { lua_pop(L, 1); continue; }
+            const char* key = lua_tostring(L, -2);
+
+            if (strcmp(key, "inherits") == 0 && lua_isstring(L, -1)) {
+                preset.inherits = lua_tostring(L, -1);
+            } else if (strcmp(key, "dark") == 0 && lua_istable(L, -1)) {
+                readPresetValuesFromTable(L, lua_gettop(L), preset.dark);
+            } else if (strcmp(key, "light") == 0 && lua_istable(L, -1)) {
+                readPresetValuesFromTable(L, lua_gettop(L), preset.light);
+            } else if (lua_isnumber(L, -1)) {
+                std::string valStr = std::to_string(lua_tonumber(L, -1));
+                setPresetField(preset.shared, key, valStr);
+            }
+            lua_pop(L, 1);
+        }
+        return 0;
+    }
+
+    return luaL_error(L, "hyprglass.preset: expected (string) or (name, table)");
+}
+
+// ── Lua layer handler ───────────────────────────────────────────────────────
+
+struct SPendingLayer {
+    std::string ns;
+    std::string preset;
+    float       maskThreshold = -1.0f;
+    bool        exclude       = false;
+};
+
+static std::vector<SPendingLayer> s_pendingLayers;
+
+static int handleLuaLayer(lua_State* L) {
+    if (lua_gettop(L) < 1 || !lua_isstring(L, 1))
+        return luaL_error(L, "hyprglass.layer: first argument must be a namespace string");
+
+    SPendingLayer entry;
+    entry.ns = lua_tostring(L, 1);
+
+    if (lua_gettop(L) >= 2 && lua_istable(L, 2)) {
+        lua_getfield(L, 2, "exclude");
+        if (lua_isboolean(L, -1) && lua_toboolean(L, -1))
+            entry.exclude = true;
+        lua_pop(L, 1);
+
+        lua_getfield(L, 2, "preset");
+        if (lua_isstring(L, -1))
+            entry.preset = lua_tostring(L, -1);
+        lua_pop(L, 1);
+
+        lua_getfield(L, 2, "mask_threshold");
+        if (lua_isnumber(L, -1))
+            entry.maskThreshold = static_cast<float>(lua_tonumber(L, -1));
+        lua_pop(L, 1);
+    }
+
+    s_pendingLayers.push_back(std::move(entry));
+    return 0;
+}
+
+void clearPendingLayers() {
+    s_pendingLayers.clear();
+}
+
+void commitPendingLayers() {
+    if (!g_pGlobalState) return;
+    for (const auto& entry : s_pendingLayers) {
+        if (entry.exclude) {
+            g_pGlobalState->layerNamespaceExclude.insert(entry.ns);
+        } else {
+            g_pGlobalState->layerNamespaceFilter.insert(entry.ns);
+            if (!entry.preset.empty())
+                g_pGlobalState->layerNamespacePresets[entry.ns] = entry.preset;
+            if (entry.maskThreshold >= 0.0f)
+                g_pGlobalState->layerNamespaceMaskThresholds[entry.ns] = entry.maskThreshold;
+        }
+    }
+    s_pendingLayers.clear();
 }
 
 void validateConfig() {
