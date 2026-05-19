@@ -74,6 +74,27 @@ plugin:hyprglass {
 }
 ```
 
+### Lua config
+
+When using Hyprland's Lua config, use dot-separated keys:
+
+```lua
+hl.config({
+  ["plugin.hyprglass.enabled"] = 1,
+  ["plugin.hyprglass.default_theme"] = "dark",
+  ["plugin.hyprglass.default_preset"] = "clear",
+  ["plugin.hyprglass.tint_color"] = 0x8899aa22,
+
+  ["plugin.hyprglass.layers.enabled"] = 1,
+  ["plugin.hyprglass.layers.namespaces"] = "waybar, notifications",
+})
+
+if hl.plugin.hyprglass and hl.plugin.hyprglass.preset then
+  hl.plugin.hyprglass.preset("name:clear, glass_opacity:0.8, blur_strength:1.5")
+  hl.plugin.hyprglass.preset("name:clear:dark, brightness:0.7")
+end
+```
+
 ### Global-only settings
 
 | Option | Type | Default | Description |
