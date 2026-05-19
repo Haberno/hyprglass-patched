@@ -42,8 +42,6 @@ hyprctl plugin load $(pwd)/hyprglass.so
 
 ## Configuration
 
-Everything goes under `plugin:hyprglass:` in your Hyprland config.
-
 ### Theme and presets
 
 Configuration uses:
@@ -57,6 +55,45 @@ Settings resolve through:
 2. **Built-in theme override** (`dark:` / `light:` prefix in settings)
 3. **Global value** (no prefix in settings)
 4. **Hardcoded theme default**
+
+### Hyprland Lua config (V2)
+
+The plugin must be loaded before configuring it. Wrap everything in a guard so the config is only applied when the plugin is available:
+
+```lua
+if hl.plugin.hyprglass then
+    hl.config({
+        plugin = {
+            hyprglass = {
+                default_theme = "dark",
+                default_preset = "clear",
+                tint_color = 0x8899aa22,
+
+                brightness = 0.9,
+                dark = { brightness = 0.82 },
+                light = { adaptive_boost = 0.5 },
+
+                layers = {
+                    enabled = 1,
+                    namespaces = "waybar, notifications",
+                },
+            },
+        },
+    })
+
+    -- Custom presets (same syntax as .conf)
+    hl.plugin.hyprglass.preset("name:clear, glass_opacity:0.8, blur_strength:1.5")
+    hl.plugin.hyprglass.preset("name:clear:dark, brightness:0.7")
+    hl.plugin.hyprglass.preset("name:clear:light, brightness:1.2")
+end
+```
+
+
+### Hyprland `*.conf` config (V1)
+
+_This is deprecated as of Hyprland 0.55_
+
+Everything goes under `plugin:hyprglass:` in your Hyprland config.
 
 ```ini
 plugin:hyprglass {
@@ -74,26 +111,6 @@ plugin:hyprglass {
 }
 ```
 
-### Lua config
-
-When using Hyprland's Lua config, use dot-separated keys:
-
-```lua
-hl.config({
-  ["plugin.hyprglass.enabled"] = 1,
-  ["plugin.hyprglass.default_theme"] = "dark",
-  ["plugin.hyprglass.default_preset"] = "clear",
-  ["plugin.hyprglass.tint_color"] = 0x8899aa22,
-
-  ["plugin.hyprglass.layers.enabled"] = 1,
-  ["plugin.hyprglass.layers.namespaces"] = "waybar, notifications",
-})
-
-if hl.plugin.hyprglass and hl.plugin.hyprglass.preset then
-  hl.plugin.hyprglass.preset("name:clear, glass_opacity:0.8, blur_strength:1.5")
-  hl.plugin.hyprglass.preset("name:clear:dark, brightness:0.7")
-end
-```
 
 ### Global-only settings
 
