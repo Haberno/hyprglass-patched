@@ -117,6 +117,11 @@ static auto* getStaticPtr(HANDLE /*handle*/, const char* key) {
     return reinterpret_cast<T* const*>(Config::mgr()->getConfigValue(key).dataptr);
 }
 
+static StringConfigPtr getStringPtr(HANDLE /*handle*/, const char* key) {
+    const auto value = Config::mgr()->getConfigValue(key);
+    return {.dataptr = value.dataptr, .type = value.type};
+}
+
 static void initOverridablePointers(HANDLE handle, SOverridableConfig& layer,
                                     const char* blurStrength, const char* blurIterations,
                                     const char* refractionStrength, const char* chromaticAberration,
@@ -148,15 +153,15 @@ static void initOverridablePointers(HANDLE handle, SOverridableConfig& layer,
 
 void initConfigPointers(HANDLE handle, SPluginConfig& config) {
     config.enabled       = getStaticPtr<Hyprlang::INT>(handle, ConfigKeys::ENABLED);
-    config.defaultTheme  = getStaticPtr<Config::STRING>(handle, ConfigKeys::DEFAULT_THEME);
-    config.defaultPreset = getStaticPtr<Config::STRING>(handle, ConfigKeys::DEFAULT_PRESET);
+    config.defaultTheme  = getStringPtr(handle, ConfigKeys::DEFAULT_THEME);
+    config.defaultPreset = getStringPtr(handle, ConfigKeys::DEFAULT_PRESET);
 
     config.layersEnabled           = getStaticPtr<Hyprlang::INT>(handle, ConfigKeys::LAYERS_ENABLED);
-    config.layersNamespaces        = getStaticPtr<Config::STRING>(handle, ConfigKeys::LAYERS_NAMESPACES);
-    config.layersExcludeNamespaces = getStaticPtr<Config::STRING>(handle, ConfigKeys::LAYERS_EXCLUDE_NAMESPACES);
-    config.layersPreset            = getStaticPtr<Config::STRING>(handle, ConfigKeys::LAYERS_PRESET);
-    config.layersNamespacePresets         = getStaticPtr<Config::STRING>(handle, ConfigKeys::LAYERS_NAMESPACE_PRESETS);
-    config.layersNamespaceMaskThresholds = getStaticPtr<Config::STRING>(handle, ConfigKeys::LAYERS_NAMESPACE_MASK_THRESHOLDS);
+    config.layersNamespaces        = getStringPtr(handle, ConfigKeys::LAYERS_NAMESPACES);
+    config.layersExcludeNamespaces = getStringPtr(handle, ConfigKeys::LAYERS_EXCLUDE_NAMESPACES);
+    config.layersPreset            = getStringPtr(handle, ConfigKeys::LAYERS_PRESET);
+    config.layersNamespacePresets         = getStringPtr(handle, ConfigKeys::LAYERS_NAMESPACE_PRESETS);
+    config.layersNamespaceMaskThresholds = getStringPtr(handle, ConfigKeys::LAYERS_NAMESPACE_MASK_THRESHOLDS);
 
     initOverridablePointers(handle, config.global,
         ConfigKeys::BLUR_STRENGTH, ConfigKeys::BLUR_ITERATIONS,
