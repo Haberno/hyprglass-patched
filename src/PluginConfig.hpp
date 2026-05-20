@@ -4,6 +4,7 @@
 #include <hyprland/src/plugins/PluginAPI.hpp>
 #include <string>
 #include <string_view>
+#include <typeinfo>
 #include <unordered_map>
 
 inline constexpr std::string_view CONFIG_PREFIX = "plugin:hyprglass:";
@@ -151,23 +152,39 @@ struct SCustomPreset {
     SPresetValues light;
 };
 
-using StringConfigPtr = Config::STRING* const*;
+struct StringConfigPtr {
+    void* const*          dataptr = nullptr;
+    const std::type_info* type    = nullptr;
+};
 
-inline std::string_view readStringConfig(StringConfigPtr ptr) {
-    return (ptr && *ptr) ? std::string_view(**ptr) : std::string_view{};
+inline std::string_view readStringConfig(const StringConfigPtr& ptr) {
+    if (!ptr.dataptr || !ptr.type)
+        return {};
+
+    if (*ptr.type == typeid(Config::STRING)) {
+        const auto* value = *reinterpret_cast<Config::STRING* const*>(ptr.dataptr);
+        return value ? std::string_view(*value) : std::string_view{};
+    }
+
+    if (*ptr.type == typeid(Hyprlang::STRING)) {
+        const auto value = *reinterpret_cast<Hyprlang::STRING const*>(ptr.dataptr);
+        return value ? std::string_view(value) : std::string_view{};
+    }
+
+    return {};
 }
 
 struct SPluginConfig {
     Hyprlang::INT* const* enabled       = nullptr;
-    StringConfigPtr      defaultTheme  = nullptr;
-    StringConfigPtr      defaultPreset = nullptr;
+    StringConfigPtr      defaultTheme;
+    StringConfigPtr      defaultPreset;
 
     Hyprlang::INT* const* layersEnabled                  = nullptr;
-    StringConfigPtr       layersNamespaces               = nullptr;
-    StringConfigPtr       layersExcludeNamespaces        = nullptr;
-    StringConfigPtr       layersPreset                   = nullptr;
-    StringConfigPtr       layersNamespacePresets         = nullptr;
-    StringConfigPtr       layersNamespaceMaskThresholds  = nullptr;
+    StringConfigPtr       layersNamespaces;
+    StringConfigPtr       layersExcludeNamespaces;
+    StringConfigPtr       layersPreset;
+    StringConfigPtr       layersNamespacePresets;
+    StringConfigPtr       layersNamespaceMaskThresholds;
 
     SOverridableConfig global;
     SOverridableConfig dark;
