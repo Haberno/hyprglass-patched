@@ -1,4 +1,12 @@
 
+## [v0.6.1](https://github.com/Hyprnux/hyprglass/compare/v0.6.0...v0.6.1) - 2026-05-20
+
+### Bug Fixes
+
+* initialize presets before validation
+* support legacy string config values
+
+
 ## [v0.6.0](https://github.com/Hyprnux/hyprglass/compare/v0.5.0...v0.6.0) - 2026-05-19
 
 ### Bug Fixes
@@ -9,6 +17,10 @@
 ### Build System
 
 * update hyprland compatibility to v0.55.2
+
+### Chores
+
+* **release:** v0.6.0 [skip ci]
 
 ### Documentation
 
