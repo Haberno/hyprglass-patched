@@ -256,8 +256,10 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
     HyprlandAPI::reloadConfig();
     initConfigPointers(PHANDLE, g_pGlobalState->config);
-    validateConfig();
+    commitPendingPresets();
     parseLayerNamespaceFilters();
+    commitPendingLayers();
+    validateConfig();
 
     return {std::string(PLUGIN_NAME), std::string(PLUGIN_DESCRIPTION), std::string(PLUGIN_AUTHOR), std::string(PLUGIN_VERSION)};
 }
