@@ -251,6 +251,11 @@ void CGlassLayerSurface::compositeAndRestore(PHLMONITOR monitor, float alpha) {
     if (threshIt != g_pGlobalState->layerNamespaceMaskThresholds.end())
         maskThreshold = threshIt->second;
 
+    // The temp FBO stores the layer after Hyprland applies fade alpha. Keep
+    // mask_threshold relative to the layer's content alpha, otherwise fade-out
+    // makes the mask fall below threshold early and the glass blinks off.
+    maskThreshold *= std::clamp(alpha, 0.0f, 1.0f);
+
     GlassRenderer::SMaskInfo maskInfo{
         .textureId         = m_surfaceTempFramebuffer->getTexture()->m_texID,
         .target            = GL_TEXTURE_2D,

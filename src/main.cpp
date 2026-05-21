@@ -18,6 +18,21 @@
 
 #include <sstream>
 
+static void clearLayerGlassOnClose(PHLLS layerSurface) {
+    if (!g_pGlobalState || !layerSurface)
+        return;
+
+    // Drop cached layer glass immediately. Otherwise the previous glass output
+    // can remain in the damage history while Hyprland switches to its close
+    // snapshot path, showing stale/black pixels for a frame.
+    std::erase_if(g_pGlobalState->layerSurfaces, [&](const auto& pair) {
+        return pair.first == layerSurface.get() || pair.second->getLayerSurface() == layerSurface;
+    });
+
+    if (auto monitor = layerSurface->m_monitor.lock())
+        g_pHyprRenderer->damageMonitor(monitor);
+}
+
 static void onNewWindow(PHLWINDOW window) {
     if (std::ranges::any_of(window->m_windowDecorations,
                             [](const auto& decoration) { return decoration->getDisplayName() == "HyprGlass"; }))
@@ -118,6 +133,15 @@ static void hkRenderLayer(Render::IHyprRenderer* thisptr, PHLLS layerSurface, PH
                            const Time::steady_tp& now, bool popups, bool lockscreen) {
     const auto& config = g_pGlobalState->config;
 
+    // Hyprland renders closing layers from snapshots. Do not inject the glass
+    // pipeline while that snapshot is being captured: the snapshot framebuffer
+    // starts transparent/black, so sampling it as a background can bake a black
+    // rectangle into the fade-out snapshot.
+    if (g_pHyprRenderer->m_bRenderingSnapshot) {
+        ((renderLayerFn)g_pGlobalState->renderLayerHook->m_original)(thisptr, layerSurface, monitor, now, popups, lockscreen);
+        return;
+    }
+
     // Prune dead layer surfaces whose weak_ptr has expired (layer was destroyed
     // but never got a replacement at the same raw pointer address)
     std::erase_if(g_pGlobalState->layerSurfaces, [](const auto& pair) {
@@ -135,6 +159,11 @@ static void hkRenderLayer(Render::IHyprRenderer* thisptr, PHLLS layerSurface, PH
             it->second = std::make_shared<CGlassLayerSurface>(layerSurface);
         } else if (it == layerStates.end()) {
             it = layerStates.emplace(rawPtr, std::make_shared<CGlassLayerSurface>(layerSurface)).first;
+        }
+
+        if (layerSurface->m_fadingOut) {
+            ((renderLayerFn)g_pGlobalState->renderLayerHook->m_original)(thisptr, layerSurface, monitor, now, popups, lockscreen);
+            return;
         }
 
         float alpha = layerSurface->m_alpha->value();
@@ -185,6 +214,8 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     static auto onOpen = Event::bus()->m_events.window.open.listen([&](PHLWINDOW w) { onNewWindow(w); });
 
     static auto onClose = Event::bus()->m_events.window.close.listen([&](PHLWINDOW w) { onCloseWindow(w); });
+
+    static auto onLayerClosed = Event::bus()->m_events.layer.closed.listen([&](PHLLS layerSurface) { clearLayerGlassOnClose(layerSurface); });
 
     // Z-order / visibility changes invalidate layer glass caches on the affected monitor only.
     // Per-monitor to avoid triggering re-samples on idle monitors (feedback loop).
