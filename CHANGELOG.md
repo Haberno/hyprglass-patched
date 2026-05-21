@@ -1,10 +1,21 @@
 
+## [v0.6.2](https://github.com/Hyprnux/hyprglass/compare/v0.6.1...v0.6.2) - 2026-05-21
+
+### Bug Fixes
+
+* keep layer mask threshold stable during fade
+
+
 ## [v0.6.1](https://github.com/Hyprnux/hyprglass/compare/v0.6.0...v0.6.1) - 2026-05-20
 
 ### Bug Fixes
 
 * initialize presets before validation
 * support legacy string config values
+
+### Chores
+
+* **release:** v0.6.1 [skip ci]
 
 
 ## [v0.6.0](https://github.com/Hyprnux/hyprglass/compare/v0.5.0...v0.6.0) - 2026-05-19
