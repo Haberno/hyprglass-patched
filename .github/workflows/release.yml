@@ -30,7 +30,9 @@ jobs:
             pixman \
             libdrm \
             pkgconf \
-            wget
+            wget \
+            jq \
+            curl
 
       - name: Checkout
         uses: actions/checkout@v4
@@ -144,13 +146,55 @@ jobs:
           echo "$CHANGELOG_CONTENT" >> "$GITHUB_OUTPUT"
           echo "EOF" >> "$GITHUB_OUTPUT"
 
+      - name: Update hyprpm commit pin
+        if: steps.version-bump.outputs.skip != 'true'
+        run: |
+          VERSION="${{ steps.hyprland-version.outputs.version }}"
+          NEW_VERSION="${{ steps.version-bump.outputs.new_version }}"
+
+          # Guard against the historical "vnull" bug and any empty value.
+          if [[ -z "$VERSION" || "$VERSION" == "null" ]]; then
+            echo "No usable Hyprland version ('$VERSION'); skipping pin update."
+            exit 0
+          fi
+
+          # The commit being released (code-identical to the upcoming changelog commit).
+          PLUGIN_COMMIT=$(git rev-parse HEAD)
+
+          # Resolve the Hyprland release tag to its commit hash.
+          HYPRLAND_COMMIT=$(curl -fsSL \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/hyprwm/Hyprland/commits/v${VERSION}" \
+            | jq -r '.sha // empty')
+
+          if [[ -z "$HYPRLAND_COMMIT" ]]; then
+            echo "Could not resolve Hyprland v${VERSION} to a commit; skipping pin update."
+            exit 0
+          fi
+
+          # Idempotent: do nothing if this Hyprland commit is already pinned.
+          if grep -q "\"${HYPRLAND_COMMIT}\"" hyprpm.toml; then
+            echo "Pin for Hyprland ${VERSION} (${HYPRLAND_COMMIT}) already present; nothing to do."
+            exit 0
+          fi
+
+          PIN_LINE="  [\"${HYPRLAND_COMMIT}\", \"${PLUGIN_COMMIT}\"], # hyprland ${VERSION} -> hyprglass v${NEW_VERSION}"
+          echo "Adding pin: ${PIN_LINE}"
+
+          # Insert the new pin just before the line that closes the commit_pins array.
+          awk -v pin="$PIN_LINE" '
+            /^commit_pins = \[/ { inblock = 1 }
+            inblock && /^\]/    { print pin; inblock = 0 }
+            { print }
+          ' hyprpm.toml > hyprpm.toml.tmp && mv hyprpm.toml.tmp hyprpm.toml
+
       - name: Commit changelog
         if: steps.version-bump.outputs.skip != 'true'
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
 
-          git add CHANGELOG.md
+          git add CHANGELOG.md hyprpm.toml
 
           if git diff --staged --quiet; then
             echo "No changelog changes to commit"
