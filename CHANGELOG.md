@@ -1,4 +1,11 @@
 
+## [v0.6.4](https://github.com/Hyprnux/hyprglass/compare/v0.6.3...v0.6.4) - 2026-06-12
+
+### Build System
+
+* update hyprland compatibility to v0.55.4
+
+
 ## [v0.6.3](https://github.com/Hyprnux/hyprglass/compare/v0.6.2...v0.6.3) - 2026-06-08
 
 ### Build System
@@ -8,6 +15,10 @@
 ### CI/CD
 
 * **hyprpm:** correctly pin to hyprland versions ([#38](https://github.com/Hyprnux/hyprglass/issues/38))
+
+### Chores
+
+* **release:** v0.6.3 [skip ci]
 
 
 ## [v0.6.2](https://github.com/Hyprnux/hyprglass/compare/v0.6.1...v0.6.2) - 2026-05-21
