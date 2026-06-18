@@ -44,13 +44,13 @@ struct SGlobalState {
     // changes on that monitor. Layer surfaces compare to their cached value to
     // skip redundant blur work. Per-monitor avoids cross-monitor feedback loops
     // where re-sampling on an idle monitor captures its own stale glass output.
-    std::unordered_map<CMonitor*, uint64_t> sceneGeneration;
+    std::unordered_map<Monitor::CMonitor*, uint64_t> sceneGeneration;
 
-    uint64_t getSceneGeneration(CMonitor* mon) const {
+    uint64_t getSceneGeneration(Monitor::CMonitor* mon) const {
         auto it = sceneGeneration.find(mon);
         return it != sceneGeneration.end() ? it->second : 0;
     }
-    void bumpSceneGeneration(CMonitor* mon) { sceneGeneration[mon]++; }
+    void bumpSceneGeneration(Monitor::CMonitor* mon) { sceneGeneration[mon]++; }
 
     // renderLayer hook
     CFunctionHook* renderLayerHook = nullptr;
