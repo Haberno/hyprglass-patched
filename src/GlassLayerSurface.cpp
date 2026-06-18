@@ -176,15 +176,18 @@ void CGlassLayerSurface::sampleAndRedirect(PHLMONITOR monitor, float alpha) {
     int monitorWidth  = static_cast<int>(monitor->m_transformedSize.x);
     int monitorHeight = static_cast<int>(monitor->m_transformedSize.y);
 
-    // Force ARGB8888 for the temp FBO: the mask shader needs alpha precision.
-    // Monitor FBOs use XRGB formats (no usable alpha); XRGB2101010 (10-bit)
-    // has only 2-bit alpha, quantizing values below ~0.17 to zero and breaking
-    // the mask discard for low-opacity layers.
+    // In FP16/HDR mode, the source FB uses RGBA16F which has full alpha precision.
+    // Use the source format to avoid clipping HDR color values.
+    // In SDR mode, force ARGB8888 because monitor FBOs (XRGB2101010 etc.) have
+    // limited/no alpha, which would quantize mask values and break the discard.
+    DRMFormat tempFormat = (monitor->useFP16()) ? source->m_drmFormat : DRM_FORMAT_ARGB8888;
+
     if (!m_surfaceTempFramebuffer)
         m_surfaceTempFramebuffer = g_pHyprRenderer->createFB("hyprglass-layer-temp");
 
-    if (m_surfaceTempFramebuffer->m_size.x != monitorWidth || m_surfaceTempFramebuffer->m_size.y != monitorHeight)
-        m_surfaceTempFramebuffer->alloc(monitorWidth, monitorHeight, DRM_FORMAT_ARGB8888);
+    if (m_surfaceTempFramebuffer->m_size.x != monitorWidth || m_surfaceTempFramebuffer->m_size.y != monitorHeight ||
+        m_surfaceTempFramebuffer->m_drmFormat != tempFormat)
+        m_surfaceTempFramebuffer->alloc(monitorWidth, monitorHeight, tempFormat);
 
     m_savedCurrentFB = source;
 
