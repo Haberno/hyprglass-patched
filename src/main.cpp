@@ -202,9 +202,17 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     const std::string HASH        = __hyprland_api_get_hash();
     const std::string CLIENT_HASH = __hyprland_api_get_client_hash();
 
-    if (HASH != CLIENT_HASH) {
+    // Only compare the ABI suffix (e.g. "_aq_0.12_hu_0.13_hg_0.5_hc_0.1_hlg_0.6"),
+    // not the leading commit hash. The commit hash changes with every git commit
+    // but the ABI components determine actual binary compatibility.
+    auto abiSuffix = [](const std::string& hash) -> std::string_view {
+        auto pos = hash.find("_aq_");
+        return pos != std::string::npos ? std::string_view{hash}.substr(pos) : std::string_view{hash};
+    };
+
+    if (abiSuffix(HASH) != abiSuffix(CLIENT_HASH)) {
         HyprlandAPI::addNotification(PHANDLE,
-            std::format("[{}] Version mismatch!", PLUGIN_NAME),
+            std::format("[{}] Version mismatch! (plugin: {}, running: {})", PLUGIN_NAME, HASH, CLIENT_HASH),
             CHyprColor{1.0, 0.2, 0.2, 1.0}, 5000);
         throw std::runtime_error("Version mismatch");
     }
