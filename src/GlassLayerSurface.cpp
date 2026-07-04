@@ -143,9 +143,13 @@ void CGlassLayerSurface::sampleAndRedirect(PHLMONITOR monitor, float alpha) {
                              layerSurface->sizeAnimation()->isBeingAnimated() ||
                              layerSurface->alpha()[Desktop::View::LS_ALPHA_FADE]->isBeingAnimated() ||
                              (activeWs && activeWs->m_renderOffset->isBeingAnimated());
+    // Live namespaces (e.g. glass over an animated wallpaper) re-sample every
+    // frame: nothing bumps the scene generation when only a background layer's
+    // content changes, so the cache would freeze the backdrop.
+    const bool liveSample = g_pGlobalState->layerNamespaceLive.contains(layerSurface->m_namespace);
     const bool backgroundChanged = !m_hasCachedSample ||
                                    currentGeneration != m_lastSceneGeneration ||
-                                   isAnimating;
+                                   isAnimating || liveSample;
 
     if (!layerSurface->m_mapped) {
         // During fade-out, re-sampling captures stale pixels. Reuse cached sample.
@@ -163,7 +167,8 @@ void CGlassLayerSurface::sampleAndRedirect(PHLMONITOR monitor, float alpha) {
 
         float blurRadius     = blurStrength * 12.0f / downscale;
         int blurIterations   = std::clamp(static_cast<int>(resolvePresetInt(ctx, &SPresetValues::blurIterations, &SOverridableConfig::blurIterations)), 1, 5);
-        GlassRenderer::blurBackground(m_sampleFramebuffer, blurRadius, blurIterations, source);
+        if (blurRadius > 0.05f)
+            GlassRenderer::blurBackground(m_sampleFramebuffer, blurRadius, blurIterations, source);
 
         m_hasCachedSample      = true;
         m_lastSceneGeneration  = currentGeneration;
@@ -241,6 +246,138 @@ void CGlassLayerSurface::compositeAndRestore(PHLMONITOR monitor, float alpha) {
     float cornerRadius  = 0.0f;
     float roundingPower = 2.0f;
 
+    float contentContrast = 0.0f;
+    if (auto ccIt = g_pGlobalState->layerNamespaceContentContrast.find(layerSurface->m_namespace);
+        ccIt != g_pGlobalState->layerNamespaceContentContrast.end())
+        contentContrast = std::clamp(ccIt->second, 0.0f, 1.0f);
+
+    // Explicit regions: one true glass quad per element (window-grade optics:
+    // per-quad bezel refraction, fresnel rim, corner SDF). The layer's own
+    // rendered content then composites on top glass-free via a zeroed preset.
+    auto regIt = g_pGlobalState->layerNamespaceRegions.find(layerSurface->m_namespace);
+    if (regIt != g_pGlobalState->layerNamespaceRegions.end() && !regIt->second.empty()) {
+        const auto& regions = regIt->second;
+        float blurStrength = resolvePresetFloat(ctx, &SPresetValues::blurStrength, &SOverridableConfig::blurStrength);
+        int   downscale    = blurStrength >= GlassRenderer::BLUR_DOWNSCALE_THRESHOLD ? GlassRenderer::BLUR_DOWNSCALE_MAX : 1;
+        float blurRadius   = blurStrength * 12.0f / downscale;
+        int   blurIters    = std::clamp(static_cast<int>(resolvePresetInt(ctx, &SPresetValues::blurIterations, &SOverridableConfig::blurIterations)), 1, 5);
+        int   monW         = static_cast<int>(monitor->m_transformedSize.x);
+        int   monH         = static_cast<int>(monitor->m_transformedSize.y);
+        auto  targetFBID   = dynamic_cast<Render::GL::CGLFramebuffer*>(target.get())->getFBID();
+
+        if (m_regionFramebuffers.size() < regions.size())
+            m_regionFramebuffers.resize(regions.size());
+        if (m_regionPaddingRatios.size() < regions.size())
+            m_regionPaddingRatios.resize(regions.size());
+        if (m_regionCacheKeys.size() != regions.size())
+            m_regionCacheKeys.assign(regions.size(), SGlassRegion{-1.f, -1.f, -1.f, -1.f, -1.f});
+
+        // Region backdrop refresh: throttled-live by default. Refresh cadence
+        // per namespace (0 = every frame, N ms = live at ~1000/N fps,
+        // -1 = static / scene-generation only). Between refreshes each region
+        // keeps its cached sample+blur; a region whose rect changed (media
+        // progress bar) re-samples immediately without touching the rest.
+        const uint64_t sceneGen   = g_pGlobalState->getSceneGeneration(monitor.get());
+        const bool     genChanged = sceneGen != m_regionsCachedGeneration;
+
+        int refreshMs = SGlobalState::DEFAULT_REGION_REFRESH_MS;
+        if (auto rIt = g_pGlobalState->layerNamespaceRegionRefreshMs.find(layerSurface->m_namespace);
+            rIt != g_pGlobalState->layerNamespaceRegionRefreshMs.end())
+            refreshMs = rIt->second;
+        else if (g_pGlobalState->layerNamespaceLive.contains(layerSurface->m_namespace))
+            refreshMs = 0; // legacy live flag: every frame
+
+        const auto now       = std::chrono::steady_clock::now();
+        const bool refreshDue = refreshMs == 0 ||
+                                (refreshMs > 0 &&
+                                 std::chrono::duration_cast<std::chrono::milliseconds>(now - m_lastRegionSampleTime).count() >= refreshMs);
+        const bool resampleAll = genChanged || refreshDue;
+
+        // Pass 1: sample+blur every region that needs it, batched together so
+        // the GPU pipelines the blits instead of stalling on 50 interleaved
+        // sample→draw dependencies.
+        struct SRegionDraw {
+            size_t i;
+            CBox   rr, rt;
+        };
+        static std::vector<SRegionDraw> draws;
+        draws.clear();
+        bool sampledAny = false;
+        for (size_t i = 0; i < regions.size(); ++i) {
+            const auto& r = regions[i];
+            CBox rr{static_cast<double>(r.x), static_cast<double>(r.y), static_cast<double>(r.w), static_cast<double>(r.h)};
+            rr.translate(-monitor->m_position);
+            rr.scale(monitor->m_scale).round().noNegativeSize();
+            if (rr.w <= 0.0 || rr.h <= 0.0 || !std::isfinite(rr.x) || !std::isfinite(rr.y)) {
+                m_regionCacheKeys[i] = SGlassRegion{-1.f, -1.f, -1.f, -1.f, -1.f};
+                continue;
+            }
+            CBox rt = transformedLayerBox(rr, monitor);
+            const bool cached = !resampleAll && m_regionFramebuffers[i] && m_regionCacheKeys[i] == r;
+            if (!cached) {
+                GlassRenderer::sampleBackground(m_regionFramebuffers[i], target, rt, m_regionPaddingRatios[i], downscale);
+                if (blurRadius > 0.05f)
+                    GlassRenderer::blurBackground(m_regionFramebuffers[i], blurRadius, blurIters, targetFBID, monW, monH);
+                m_regionCacheKeys[i] = r;
+                sampledAny = true;
+            }
+            if (m_regionFramebuffers[i])
+                draws.push_back({i, rr, rt});
+        }
+
+        // Pass 2: draw all glass quads from their (cached or fresh) samples.
+        for (auto& d : draws)
+            GlassRenderer::applyGlassEffect(m_regionFramebuffers[d.i], target, d.rr, d.rt, alpha,
+                                             regions[d.i].radius * static_cast<float>(monitor->m_scale), 2.0f,
+                                             m_regionPaddingRatios[d.i], ctx, nullptr);
+
+        m_regionsCachedGeneration = sceneGen;
+        if (refreshDue)
+            m_lastRegionSampleTime = now;
+        (void)sampledAny;
+
+        // Composite the layer's rendered content over the region glass with a
+        // preset that zeroes every glass term -> shader emits content only.
+        static const SCustomPreset contentOnlyPreset = [] {
+            SCustomPreset p;
+            p.name = "__hg_content_only";
+            for (SPresetValues* v : {&p.shared, &p.dark, &p.light}) {
+                v->blurStrength = 0.0f;  v->blurIterations = 1;   v->refractionStrength = 0.0f;
+                v->chromaticAberration = 0.0f; v->fresnelStrength = 0.0f; v->specularStrength = 0.0f;
+                v->glassOpacity = 0.0f;  v->edgeThickness = 0.0f; v->tintColor = 0;
+                v->lensDistortion = 0.0f; v->brightness = 1.0f;   v->contrast = 1.0f;
+                v->saturation = 1.0f;    v->vibrancy = 0.0f;      v->vibrancyDarkness = 0.0f;
+                v->adaptiveDim = 0.0f;   v->adaptiveBoost = 0.0f;
+            }
+            return p;
+        }();
+        static const std::unordered_map<std::string, SCustomPreset> contentOnlyMap{
+            {contentOnlyPreset.name, contentOnlyPreset}};
+        static const std::string contentOnlyName = contentOnlyPreset.name;
+        const SResolveContext contentCtx{contentOnlyName, isDark, g_pGlobalState->config, contentOnlyMap};
+
+        GlassRenderer::SMaskInfo contentMask{
+            .textureId      = m_surfaceTempFramebuffer->getTexture()->m_texID,
+            .target         = GL_TEXTURE_2D,
+            .uvOffset       = {transformBox.x / monW, transformBox.y / monH},
+            .uvScale        = {transformBox.w / monW, transformBox.h / monH},
+            // Respect the configured namespace threshold: the legacy path
+            // discarded sub-threshold pixels (faint shadows/scrim fringe past
+            // the panel border) entirely — keep that behavior for content.
+            .alphaThreshold = [&] {
+                float t = 0.001f;
+                auto it = g_pGlobalState->layerNamespaceMaskThresholds.find(layerSurface->m_namespace);
+                if (it != g_pGlobalState->layerNamespaceMaskThresholds.end())
+                    t = it->second;
+                return t * std::clamp(alpha, 0.0f, 1.0f);
+            }(),
+            .contentContrast = contentContrast,
+        };
+        GlassRenderer::applyGlassEffect(m_sampleFramebuffer, target, rawBox, transformBox, alpha,
+                                         0.0f, 2.0f, m_samplePaddingRatio, contentCtx, &contentMask);
+        return;
+    }
+
     // Use the temp FBO's rendered alpha as a mask: glass only where the surface
     // has visible content (alpha > 0). The temp FBO is in monitor coordinates,
     // so we map from the glass quad UV to monitor UV.
@@ -263,6 +400,7 @@ void CGlassLayerSurface::compositeAndRestore(PHLMONITOR monitor, float alpha) {
         .uvOffset          = {transformBox.x / monitorWidth, transformBox.y / monitorHeight},
         .uvScale           = {transformBox.w / monitorWidth, transformBox.h / monitorHeight},
         .alphaThreshold    = maskThreshold,
+        .contentContrast   = contentContrast,
     };
 
     // The glass shader composites both the glass effect and the surface content

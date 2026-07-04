@@ -1,8 +1,10 @@
 #pragma once
 
+#include "GlassRegion.hpp"
 #include "GlassRenderer.hpp"
 #include "PluginConfig.hpp"
 
+#include <chrono>
 #include <hyprland/src/desktop/view/LayerSurface.hpp>
 #include <hyprland/src/render/Framebuffer.hpp>
 
@@ -24,6 +26,17 @@ class CGlassLayerSurface {
   private:
     PHLLSREF     m_layerSurface;
     SP<Render::IFramebuffer> m_sampleFramebuffer;
+    // One backdrop sample FBO per explicit glass region (window-grade path)
+    std::vector<SP<Render::IFramebuffer>> m_regionFramebuffers;
+    // Per-region sample cache: skip sample+blur while scene generation and
+    // region set are unchanged (video playback damages every frame otherwise)
+    std::vector<Vector2D> m_regionPaddingRatios;
+    // Cache key per region FBO: a region re-samples only when its own rect
+    // changed (or scene generation moved). Media-card progress bars mutate
+    // one rect frequently; the other ~50 regions keep their cached sample.
+    std::vector<SGlassRegion> m_regionCacheKeys;
+    uint64_t     m_regionsCachedGeneration = 0;
+    std::chrono::steady_clock::time_point m_lastRegionSampleTime{};
     SP<Render::IFramebuffer> m_surfaceTempFramebuffer;
     Vector2D     m_samplePaddingRatio;
     bool         m_hasCachedSample = false;

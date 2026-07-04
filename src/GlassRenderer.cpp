@@ -155,7 +155,7 @@ void applyGlassEffect(SP<Render::IFramebuffer> sampleFramebuffer, SP<Render::IFr
                        CBox& rawBox, CBox& transformedBox,
                        float alpha, float cornerRadius, float roundingPower,
                        const Vector2D& paddingRatio, const SResolveContext& resolveContext,
-                       const SMaskInfo* mask) {
+                       const SMaskInfo* mask, float edgeThicknessOverride) {
     if (!sampleFramebuffer || !targetFramebuffer)
         return;
 
@@ -197,7 +197,12 @@ void applyGlassEffect(SP<Render::IFramebuffer> sampleFramebuffer, SP<Render::IFr
     glUniform1f(uniforms.fresnelStrength,     resolvePresetFloat(resolveContext, &SPresetValues::fresnelStrength, &SOverridableConfig::fresnelStrength));
     glUniform1f(uniforms.specularStrength,    resolvePresetFloat(resolveContext, &SPresetValues::specularStrength, &SOverridableConfig::specularStrength));
     glUniform1f(uniforms.glassOpacity,        resolvePresetFloat(resolveContext, &SPresetValues::glassOpacity, &SOverridableConfig::glassOpacity) * alpha);
-    glUniform1f(uniforms.edgeThickness,       resolvePresetFloat(resolveContext, &SPresetValues::edgeThickness, &SOverridableConfig::edgeThickness));
+    {
+        float edge = resolvePresetFloat(resolveContext, &SPresetValues::edgeThickness, &SOverridableConfig::edgeThickness);
+        if (edgeThicknessOverride >= 0.0f)
+            edge = edgeThicknessOverride;
+        glUniform1f(uniforms.edgeThickness, edge);
+    }
     glUniform1f(uniforms.lensDistortion,      resolvePresetFloat(resolveContext, &SPresetValues::lensDistortion, &SOverridableConfig::lensDistortion));
 
     uploadThemeUniforms(resolveContext);
@@ -226,9 +231,11 @@ void applyGlassEffect(SP<Render::IFramebuffer> sampleFramebuffer, SP<Render::IFr
             static_cast<float>(mask->uvScale.x),
             static_cast<float>(mask->uvScale.y));
         glUniform1f(uniforms.maskAlphaThreshold, mask->alphaThreshold);
+        glUniform1f(uniforms.contentContrast, mask->contentContrast);
     } else {
         glUniform1i(uniforms.useMask, 0);
         glUniform1f(uniforms.maskAlphaThreshold, 0.001f);
+        glUniform1f(uniforms.contentContrast, 0.0f);
     }
 
     shader->setUniformFloat(SHADER_RADIUS, cornerRadius);

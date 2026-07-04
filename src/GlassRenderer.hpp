@@ -28,6 +28,9 @@ struct SMaskInfo {
     Vector2D uvOffset; // mapping from glass box UV → full surface UV
     Vector2D uvScale;
     float    alphaThreshold = 0.001f;
+    // 0..1: recolor content per-pixel toward the contrast-inverse of its
+    // local backdrop (used for bar icons). 0 = draw content as-is.
+    float    contentContrast = 0.0f;
 };
 
 void sampleBackground(SP<Render::IFramebuffer>& sampleFramebuffer, SP<Render::IFramebuffer> sourceFramebuffer,
@@ -46,6 +49,6 @@ void applyGlassEffect(SP<Render::IFramebuffer> sampleFramebuffer, SP<Render::IFr
                        CBox& rawBox, CBox& transformedBox,
                        float alpha, float cornerRadius, float roundingPower,
                        const Vector2D& paddingRatio, const SResolveContext& resolveContext,
-                       const SMaskInfo* mask = nullptr);
+                       const SMaskInfo* mask = nullptr, float edgeThicknessOverride = -1.0f);
 
 } // namespace GlassRenderer
