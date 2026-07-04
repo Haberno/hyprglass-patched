@@ -44,6 +44,7 @@ void registerConfig(HANDLE handle) {
     addConfigValue<Config::Values::String>(handle, ConfigKeys::LAYERS_PRESET, Config::STRING{});
     addConfigValue<Config::Values::String>(handle, ConfigKeys::LAYERS_NAMESPACE_PRESETS, Config::STRING{});
     addConfigValue<Config::Values::String>(handle, ConfigKeys::LAYERS_NAMESPACE_MASK_THRESHOLDS, Config::STRING{});
+    addConfigValue<Config::Values::String>(handle, ConfigKeys::LAYERS_LIVE_NAMESPACES, Config::STRING{});
 
     // Global level — real defaults for effect settings,
     // sentinel for theme-sensitive settings (fallback to hardcoded theme defaults)
@@ -162,6 +163,7 @@ void initConfigPointers(HANDLE handle, SPluginConfig& config) {
     config.layersPreset            = getStringPtr(handle, ConfigKeys::LAYERS_PRESET);
     config.layersNamespacePresets         = getStringPtr(handle, ConfigKeys::LAYERS_NAMESPACE_PRESETS);
     config.layersNamespaceMaskThresholds = getStringPtr(handle, ConfigKeys::LAYERS_NAMESPACE_MASK_THRESHOLDS);
+    config.layersLiveNamespaces    = getStringPtr(handle, ConfigKeys::LAYERS_LIVE_NAMESPACES);
 
     initOverridablePointers(handle, config.global,
         ConfigKeys::BLUR_STRENGTH, ConfigKeys::BLUR_ITERATIONS,
@@ -470,6 +472,7 @@ struct SPendingLayer {
     std::string preset;
     float       maskThreshold = -1.0f;
     bool        exclude       = false;
+    bool        live          = false;
 };
 
 static std::vector<SPendingLayer> s_pendingLayers;
@@ -496,6 +499,11 @@ static int handleLuaLayer(lua_State* L) {
         if (lua_isnumber(L, -1))
             entry.maskThreshold = static_cast<float>(lua_tonumber(L, -1));
         lua_pop(L, 1);
+
+        lua_getfield(L, 2, "live");
+        if (lua_isboolean(L, -1) && lua_toboolean(L, -1))
+            entry.live = true;
+        lua_pop(L, 1);
     }
 
     s_pendingLayers.push_back(std::move(entry));
@@ -517,6 +525,8 @@ void commitPendingLayers() {
                 g_pGlobalState->layerNamespacePresets[entry.ns] = entry.preset;
             if (entry.maskThreshold >= 0.0f)
                 g_pGlobalState->layerNamespaceMaskThresholds[entry.ns] = entry.maskThreshold;
+            if (entry.live)
+                g_pGlobalState->layerNamespaceLive.insert(entry.ns);
         }
     }
     s_pendingLayers.clear();
