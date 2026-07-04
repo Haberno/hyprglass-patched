@@ -237,14 +237,6 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
             std::string spec = rest.substr(secondSpace + 1);
             if (spec == "clear") {
                 g_pGlobalState->layerNamespaceRegions.erase(ns);
-            } else if (spec.rfind("refresh ", 0) == 0) {
-                // glassregions <namespace> refresh <ms> — region backdrop
-                // cadence: 0 = every frame, N = live at ~1000/N fps,
-                // -1 = static (scene changes only). Empty = reset to default.
-                int ms = 0;
-                if (std::sscanf(spec.c_str() + 8, "%d", &ms) != 1)
-                    return "err: bad refresh value";
-                g_pGlobalState->layerNamespaceRegionRefreshMs[ns] = std::max(ms, -1);
             } else if (spec.rfind("contrast ", 0) == 0) {
                 // glassregions <namespace> contrast <0..1> — per-pixel
                 // content contrast recolor strength (0 disables).
