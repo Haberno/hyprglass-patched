@@ -46,6 +46,12 @@ class CGlassDecoration : public IHyprWindowDecoration {
     void updateNoBlurProp(bool glassEnabled);
     void withdrawNoBlur();
 
+    // Track last drawn alpha: focus in/out fades (active/inactive opacity)
+    // animate alpha without moving the window, and Hyprland's own damage
+    // covers only the surface — not our padded sampling rim.
+    float m_lastDrawAlpha      = -1.f;
+    float m_lastEffectiveAlpha = -1.f;
+
     [[nodiscard]] bool        resolveEnabled() const;
     [[nodiscard]] bool        resolveThemeIsDark() const;
     [[nodiscard]] std::string resolvePresetName() const;
