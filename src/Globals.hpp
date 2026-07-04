@@ -1,6 +1,7 @@
 #pragma once
 
 #include "GlassLayerSurface.hpp"
+#include "GlassRegion.hpp"
 #include "PluginConfig.hpp"
 #include "ShaderManager.hpp"
 
@@ -16,6 +17,7 @@
 
 class CGlassDecoration;
 
+
 struct SGlobalState {
     std::vector<WP<CGlassDecoration>> decorations;
     CShaderManager                    shaderManager;
@@ -23,6 +25,18 @@ struct SGlobalState {
 
     // User-defined presets (populated from config keyword, swapped in on configReloaded)
     std::unordered_map<std::string, SCustomPreset> customPresets;
+
+    // Per-namespace explicit glass regions (monitor-global logical coords).
+    // When non-empty for a layer's namespace, each region gets its OWN glass
+    // quad (window-grade bezel/rim/corner optics) instead of one layer-box
+    // quad + alpha mask. Updated at runtime via `hyprctl glassregions`.
+    std::unordered_map<std::string, std::vector<SGlassRegion>> layerNamespaceRegions;
+    // Region backdrop refresh cadence per namespace (ms):
+    //   0 = re-sample every frame, N = live at ~1000/N fps, -1 = static
+    //   (scene-generation bumps only). Absent = DEFAULT_REGION_REFRESH_MS.
+    // Runtime-set via `hyprctl glassregions <ns> refresh <ms>`.
+    std::unordered_map<std::string, int> layerNamespaceRegionRefreshMs;
+    static constexpr int DEFAULT_REGION_REFRESH_MS = 33;
 
     // Shared blur temp framebuffer (reused across all decorations since they render sequentially)
     SP<Render::IFramebuffer> blurTempFramebuffer;
@@ -39,6 +53,14 @@ struct SGlobalState {
     std::unordered_map<std::string, std::string> layerNamespacePresets;
     // Per-namespace mask alpha threshold (namespace → threshold, default 0.001)
     std::unordered_map<std::string, float> layerNamespaceMaskThresholds;
+    // Namespaces that re-sample the backdrop every frame instead of using the
+    // cached sample (needed when animated content, e.g. a live wallpaper,
+    // renders below the glass layer without bumping the scene generation)
+    std::unordered_set<std::string> layerNamespaceLive;
+    // Per-namespace content contrast strength (0..1): recolor the layer's
+    // rendered content per-pixel toward the inverse/contrast of its local
+    // backdrop. Runtime-set via `hyprctl glassregions <ns> contrast <v>`.
+    std::unordered_map<std::string, float> layerNamespaceContentContrast;
 
     // Per-monitor generation counter, incremented when the scene behind layers
     // changes on that monitor. Layer surfaces compare to their cached value to

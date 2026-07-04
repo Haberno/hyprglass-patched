@@ -57,6 +57,7 @@ uniform int useMask;
 uniform vec2 maskUVOffset;
 uniform vec2 maskUVScale;
 uniform float maskAlphaThreshold;
+uniform float contentContrast;
 
 in vec2 v_texcoord;
 layout(location = 0) out vec4 fragColor;
@@ -266,6 +267,29 @@ void main() {
         // surface rendering, so we unpremultiply before the 'over' blend.
         float surfA = surfacePixel.a;
         vec3 surfRGB = surfA > 0.001 ? surfacePixel.rgb / surfA : vec3(0.0);
+
+        // Per-pixel content contrast: recolor the surface toward the
+        // inverse of its local backdrop, pushed toward white/black until
+        // a readable contrast ratio is reached. Used for bar icons so
+        // every glyph contrasts with whatever is behind it right now.
+        if (contentContrast > 0.001 && surfA > 0.001) {
+            vec3 bg = color;
+            float lumB = dot(bg, vec3(0.2126, 0.7152, 0.0722));
+            vec3 inv = vec3(1.0) - bg;
+            float lumI = dot(inv, vec3(0.2126, 0.7152, 0.0722));
+            float cr = (max(lumI, lumB) + 0.05) / (min(lumI, lumB) + 0.05);
+            float pole = lumB > 0.5 ? 0.0 : 1.0;
+            float k = clamp((4.5 - cr) / 4.5, 0.0, 1.0);
+            vec3 contrastRGB = mix(inv, vec3(pole), k);
+            // Only recolor monochrome content (theme glyphs, text).
+            // Saturated pixels are real-color imagery (app icons, badges)
+            // that must keep its identity.
+            float cMax = max(surfRGB.r, max(surfRGB.g, surfRGB.b));
+            float cMin = min(surfRGB.r, min(surfRGB.g, surfRGB.b));
+            float satC = (cMax - cMin) / max(cMax, 0.001);
+            float mono = 1.0 - smoothstep(0.15, 0.45, satC);
+            surfRGB = mix(surfRGB, contrastRGB, contentContrast * mono);
+        }
 
         float compA = surfA + glassA * (1.0 - surfA);
         vec3 compRGB = compA > 0.001

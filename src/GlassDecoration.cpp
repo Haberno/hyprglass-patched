@@ -110,6 +110,16 @@ void CGlassDecoration::draw(PHLMONITOR monitor, float const& alpha) {
             m_lastSize = currentSize;
         }
 
+        // Focus fades animate alpha in place; without seeding damage for the
+        // padded rim, the last mid-fade frame's glass pixels persist outside
+        // the window box as a stale "overdraw" ghost.
+        const float effAlpha = window->effectiveAlpha();
+        if (alpha != m_lastDrawAlpha || effAlpha != m_lastEffectiveAlpha) {
+            damageEntire();
+            m_lastDrawAlpha      = alpha;
+            m_lastEffectiveAlpha = effAlpha;
+        }
+
         // Bump layer cache only for actual scene changes (window moved/animating),
         // NOT from damageEntire() which fires in the damage system feedback path.
         if (moved || wsAnimating) {

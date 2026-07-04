@@ -18,6 +18,8 @@
 
 #include <sstream>
 
+static SP<SHyprCtlCommand> g_pRegionsCommand;
+
 static void clearLayerGlassOnClose(PHLLS layerSurface) {
     if (!g_pGlobalState || !layerSurface)
         return;
@@ -108,6 +110,9 @@ static void parseLayerNamespaceFilters() {
     parseKeyValuePairs(config.layersNamespaceMaskThresholds, '=', [&](const std::string& ns, const std::string& val) {
         try { g_pGlobalState->layerNamespaceMaskThresholds.emplace(ns, std::stof(val)); } catch (...) {}
     });
+
+    g_pGlobalState->layerNamespaceLive.clear();
+    parseCommaSeparated(config.layersLiveNamespaces, g_pGlobalState->layerNamespaceLive);
 }
 
 static bool shouldGlassLayer(PHLLS layerSurface) {
@@ -211,6 +216,84 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
     g_pGlobalState = std::make_unique<SGlobalState>();
 
+    // Runtime per-element glass regions:
+    //   hyprctl glassregions <namespace> x,y,w,h,radius[;x,y,w,h,radius...]
+    //   hyprctl glassregions <namespace> clear
+    // Coordinates are monitor-global logical pixels (QML mapToGlobal space).
+    g_pRegionsCommand = HyprlandAPI::registerHyprCtlCommand(handle, SHyprCtlCommand{
+        .name  = "glassregions",
+        .exact = false,
+        .fn    = [](eHyprCtlOutputFormat, std::string request) -> std::string {
+            if (!g_pGlobalState)
+                return "err: plugin state gone";
+            auto firstSpace = request.find(' ');
+            if (firstSpace == std::string::npos)
+                return "usage: glassregions <namespace> clear|x,y,w,h,r[;...]";
+            std::string rest = request.substr(firstSpace + 1);
+            auto secondSpace = rest.find(' ');
+            if (secondSpace == std::string::npos)
+                return "usage: glassregions <namespace> clear|x,y,w,h,r[;...]";
+            std::string ns   = rest.substr(0, secondSpace);
+            std::string spec = rest.substr(secondSpace + 1);
+            if (spec == "clear") {
+                g_pGlobalState->layerNamespaceRegions.erase(ns);
+            } else if (spec.rfind("refresh ", 0) == 0) {
+                // glassregions <namespace> refresh <ms> — region backdrop
+                // cadence: 0 = every frame, N = live at ~1000/N fps,
+                // -1 = static (scene changes only). Empty = reset to default.
+                int ms = 0;
+                if (std::sscanf(spec.c_str() + 8, "%d", &ms) != 1)
+                    return "err: bad refresh value";
+                g_pGlobalState->layerNamespaceRegionRefreshMs[ns] = std::max(ms, -1);
+            } else if (spec.rfind("contrast ", 0) == 0) {
+                // glassregions <namespace> contrast <0..1> — per-pixel
+                // content contrast recolor strength (0 disables).
+                float v = 0.f;
+                if (std::sscanf(spec.c_str() + 9, "%f", &v) != 1 || !std::isfinite(v))
+                    return "err: bad contrast value";
+                if (v <= 0.f)
+                    g_pGlobalState->layerNamespaceContentContrast.erase(ns);
+                else
+                    g_pGlobalState->layerNamespaceContentContrast[ns] = std::min(v, 1.f);
+            } else {
+                std::vector<SGlassRegion> regions;
+                std::stringstream rectStream(spec);
+                std::string rect;
+                while (std::getline(rectStream, rect, ';')) {
+                    SGlassRegion r;
+                    if (std::sscanf(rect.c_str(), "%f,%f,%f,%f,%f", &r.x, &r.y, &r.w, &r.h, &r.radius) == 5 &&
+                        r.w > 0.f && r.h > 0.f && std::isfinite(r.x) && std::isfinite(r.y))
+                        regions.push_back(r);
+                }
+                if (regions.empty())
+                    return "err: no valid rects parsed";
+                if (regions.size() > 256)
+                    regions.resize(256);
+                g_pGlobalState->layerNamespaceRegions[ns] = std::move(regions);
+            }
+            // Damage only monitors the updated regions actually touch —
+            // damaging everything forced full redraws of BOTH monitors on
+            // every region update (media progress bars update often).
+            auto regIt = g_pGlobalState->layerNamespaceRegions.find(ns);
+            for (auto& monitor : g_pCompositor->m_monitors) {
+                if (regIt == g_pGlobalState->layerNamespaceRegions.end()) {
+                    g_pHyprRenderer->damageMonitor(monitor); // clear: play safe
+                    continue;
+                }
+                CBox monBox{monitor->m_position.x, monitor->m_position.y,
+                            monitor->m_size.x, monitor->m_size.y};
+                for (const auto& r : regIt->second) {
+                    CBox rb{static_cast<double>(r.x), static_cast<double>(r.y),
+                            static_cast<double>(r.w), static_cast<double>(r.h)};
+                    if (!rb.intersection(monBox).empty()) {
+                        g_pHyprRenderer->damageMonitor(monitor);
+                        break;
+                    }
+                }
+            }
+            return "ok";
+        }});
+
     static auto onOpen = Event::bus()->m_events.window.open.listen([&](PHLWINDOW w) { onNewWindow(w); });
 
     static auto onClose = Event::bus()->m_events.window.close.listen([&](PHLWINDOW w) { onCloseWindow(w); });
@@ -296,6 +379,11 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
+    if (g_pRegionsCommand) {
+        HyprlandAPI::unregisterHyprCtlCommand(PHANDLE, g_pRegionsCommand);
+        g_pRegionsCommand = nullptr;
+    }
+
     if (!g_pGlobalState)
         return;
 

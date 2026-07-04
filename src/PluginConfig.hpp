@@ -61,6 +61,7 @@ inline constexpr auto LAYERS_EXCLUDE_NAMESPACES = "plugin:hyprglass:layers:exclu
 inline constexpr auto LAYERS_PRESET             = "plugin:hyprglass:layers:preset";
 inline constexpr auto LAYERS_NAMESPACE_PRESETS          = "plugin:hyprglass:layers:namespace_presets";
 inline constexpr auto LAYERS_NAMESPACE_MASK_THRESHOLDS  = "plugin:hyprglass:layers:namespace_mask_thresholds";
+inline constexpr auto LAYERS_LIVE_NAMESPACES    = "plugin:hyprglass:layers:live_namespaces";
 
 // Overridable — dark theme overrides
 inline constexpr auto DARK_BLUR_STRENGTH        = "plugin:hyprglass:dark:blur_strength";
@@ -185,6 +186,7 @@ struct SPluginConfig {
     StringConfigPtr       layersPreset;
     StringConfigPtr       layersNamespacePresets;
     StringConfigPtr       layersNamespaceMaskThresholds;
+    StringConfigPtr       layersLiveNamespaces;
 
     SOverridableConfig global;
     SOverridableConfig dark;
