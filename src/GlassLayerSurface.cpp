@@ -267,74 +267,22 @@ void CGlassLayerSurface::compositeAndRestore(PHLMONITOR monitor, float alpha) {
 
         if (m_regionFramebuffers.size() < regions.size())
             m_regionFramebuffers.resize(regions.size());
-        if (m_regionPaddingRatios.size() < regions.size())
-            m_regionPaddingRatios.resize(regions.size());
-        if (m_regionCacheKeys.size() != regions.size())
-            m_regionCacheKeys.assign(regions.size(), SGlassRegion{-1.f, -1.f, -1.f, -1.f, -1.f});
 
-        // Region backdrop refresh: throttled-live by default. Refresh cadence
-        // per namespace (0 = every frame, N ms = live at ~1000/N fps,
-        // -1 = static / scene-generation only). Between refreshes each region
-        // keeps its cached sample+blur; a region whose rect changed (media
-        // progress bar) re-samples immediately without touching the rest.
-        const uint64_t sceneGen   = g_pGlobalState->getSceneGeneration(monitor.get());
-        const bool     genChanged = sceneGen != m_regionsCachedGeneration;
-
-        int refreshMs = SGlobalState::DEFAULT_REGION_REFRESH_MS;
-        if (auto rIt = g_pGlobalState->layerNamespaceRegionRefreshMs.find(layerSurface->m_namespace);
-            rIt != g_pGlobalState->layerNamespaceRegionRefreshMs.end())
-            refreshMs = rIt->second;
-        else if (g_pGlobalState->layerNamespaceLive.contains(layerSurface->m_namespace))
-            refreshMs = 0; // legacy live flag: every frame
-
-        const auto now       = std::chrono::steady_clock::now();
-        const bool refreshDue = refreshMs == 0 ||
-                                (refreshMs > 0 &&
-                                 std::chrono::duration_cast<std::chrono::milliseconds>(now - m_lastRegionSampleTime).count() >= refreshMs);
-        const bool resampleAll = genChanged || refreshDue;
-
-        // Pass 1: sample+blur every region that needs it, batched together so
-        // the GPU pipelines the blits instead of stalling on 50 interleaved
-        // sample→draw dependencies.
-        struct SRegionDraw {
-            size_t i;
-            CBox   rr, rt;
-        };
-        static std::vector<SRegionDraw> draws;
-        draws.clear();
-        bool sampledAny = false;
         for (size_t i = 0; i < regions.size(); ++i) {
             const auto& r = regions[i];
             CBox rr{static_cast<double>(r.x), static_cast<double>(r.y), static_cast<double>(r.w), static_cast<double>(r.h)};
             rr.translate(-monitor->m_position);
             rr.scale(monitor->m_scale).round().noNegativeSize();
-            if (rr.w <= 0.0 || rr.h <= 0.0 || !std::isfinite(rr.x) || !std::isfinite(rr.y)) {
-                m_regionCacheKeys[i] = SGlassRegion{-1.f, -1.f, -1.f, -1.f, -1.f};
+            if (rr.w <= 0.0 || rr.h <= 0.0 || !std::isfinite(rr.x) || !std::isfinite(rr.y))
                 continue;
-            }
             CBox rt = transformedLayerBox(rr, monitor);
-            const bool cached = !resampleAll && m_regionFramebuffers[i] && m_regionCacheKeys[i] == r;
-            if (!cached) {
-                GlassRenderer::sampleBackground(m_regionFramebuffers[i], target, rt, m_regionPaddingRatios[i], downscale);
-                if (blurRadius > 0.05f)
-                    GlassRenderer::blurBackground(m_regionFramebuffers[i], blurRadius, blurIters, targetFBID, monW, monH);
-                m_regionCacheKeys[i] = r;
-                sampledAny = true;
-            }
-            if (m_regionFramebuffers[i])
-                draws.push_back({i, rr, rt});
+            Vector2D pad;
+            GlassRenderer::sampleBackground(m_regionFramebuffers[i], target, rt, pad, downscale);
+            if (blurRadius > 0.05f)
+                GlassRenderer::blurBackground(m_regionFramebuffers[i], blurRadius, blurIters, targetFBID, monW, monH);
+            GlassRenderer::applyGlassEffect(m_regionFramebuffers[i], target, rr, rt, alpha,
+                                             r.radius * static_cast<float>(monitor->m_scale), 2.0f, pad, ctx, nullptr);
         }
-
-        // Pass 2: draw all glass quads from their (cached or fresh) samples.
-        for (auto& d : draws)
-            GlassRenderer::applyGlassEffect(m_regionFramebuffers[d.i], target, d.rr, d.rt, alpha,
-                                             regions[d.i].radius * static_cast<float>(monitor->m_scale), 2.0f,
-                                             m_regionPaddingRatios[d.i], ctx, nullptr);
-
-        m_regionsCachedGeneration = sceneGen;
-        if (refreshDue)
-            m_lastRegionSampleTime = now;
-        (void)sampledAny;
 
         // Composite the layer's rendered content over the region glass with a
         // preset that zeroes every glass term -> shader emits content only.
