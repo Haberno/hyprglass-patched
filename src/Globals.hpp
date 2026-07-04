@@ -32,12 +32,6 @@ struct SGlobalState {
     // quad (window-grade bezel/rim/corner optics) instead of one layer-box
     // quad + alpha mask. Updated at runtime via `hyprctl glassregions`.
     std::unordered_map<std::string, std::vector<SGlassRegion>> layerNamespaceRegions;
-    // Region backdrop refresh cadence per namespace (ms):
-    //   0 = re-sample every frame, N = live at ~1000/N fps, -1 = static
-    //   (scene-generation bumps only). Absent = DEFAULT_REGION_REFRESH_MS.
-    // Runtime-set via `hyprctl glassregions <ns> refresh <ms>`.
-    std::unordered_map<std::string, int> layerNamespaceRegionRefreshMs;
-    static constexpr int DEFAULT_REGION_REFRESH_MS = 33;
 
     // Shared blur temp framebuffer (reused across all decorations since they render sequentially)
     SP<Render::IFramebuffer> blurTempFramebuffer;
