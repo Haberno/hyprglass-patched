@@ -37,9 +37,10 @@ inline constexpr int MAX_PRESET_INHERITANCE_DEPTH = 8;
 namespace ConfigKeys {
 
 // Global-only
-inline constexpr auto ENABLED        = "plugin:hyprglass:enabled";
-inline constexpr auto DEFAULT_THEME  = "plugin:hyprglass:default_theme";
-inline constexpr auto DEFAULT_PRESET = "plugin:hyprglass:default_preset";
+inline constexpr auto ENABLED            = "plugin:hyprglass:enabled";
+inline constexpr auto DEFAULT_THEME      = "plugin:hyprglass:default_theme";
+inline constexpr auto DEFAULT_PRESET     = "plugin:hyprglass:default_preset";
+inline constexpr auto MANAGE_WINDOW_BLUR = "plugin:hyprglass:manage_window_blur";
 
 // Preset keyword, registered as unscoped because Hyprlang does not dispatch
 // scoped keyword handlers inside the plugin special category.
@@ -185,7 +186,12 @@ inline std::string_view readStringConfig(const StringConfigPtr& ptr) {
 }
 
 struct SPluginConfig {
-    Hyprlang::INT* const* enabled       = nullptr;
+    Hyprlang::INT* const* enabled          = nullptr;
+    // Glass replaces Hyprland's blur for glassed windows: when set, the plugin
+    // marks them with the noblur window property so Hyprland composites them
+    // against the live framebuffer (which contains the glass) instead of its
+    // pre-frame cached blur.
+    Hyprlang::INT* const* manageWindowBlur = nullptr;
     StringConfigPtr      defaultTheme;
     StringConfigPtr      defaultPreset;
 

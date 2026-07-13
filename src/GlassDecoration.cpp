@@ -17,6 +17,50 @@ CGlassDecoration::CGlassDecoration(PHLWINDOW window)
     : IHyprWindowDecoration(window), m_window(window) {
 }
 
+CGlassDecoration::~CGlassDecoration() {
+    withdrawNoBlur();
+}
+
+// Glass replaces Hyprland's blur for this window. Mark glassed windows with
+// the noblur property so Hyprland composites their translucency against the
+// live framebuffer (which contains the glass) instead of its pre-frame cached
+// blur snapshot, which is captured before plugin decorations render (#46).
+void CGlassDecoration::updateNoBlurProp(bool glassEnabled) {
+    const auto& config = g_pGlobalState->config;
+    const bool manage = config.manageWindowBlur && **config.manageWindowBlur;
+
+    if (!manage || !glassEnabled) {
+        withdrawNoBlur();
+        return;
+    }
+
+    if (m_noBlurApplied)
+        return;
+
+    try {
+        const auto window = m_window.lock();
+        if (window && window->m_ruleApplicator) {
+            window->m_ruleApplicator->noBlur().set(true, Desktop::Types::PRIORITY_SET_PROP);
+            m_noBlurApplied = true;
+            damageEntire();
+        }
+    } catch (...) {}
+}
+
+void CGlassDecoration::withdrawNoBlur() {
+    if (!m_noBlurApplied)
+        return;
+    m_noBlurApplied = false;
+
+    try {
+        const auto window = m_window.lock();
+        if (window && window->m_ruleApplicator) {
+            window->m_ruleApplicator->noBlur().unset(Desktop::Types::PRIORITY_SET_PROP);
+            damageEntire();
+        }
+    } catch (...) {}
+}
+
 bool CGlassDecoration::resolveEnabled() const {
     const auto& config = g_pGlobalState->config;
     const bool globalEnabled = config.enabled && **config.enabled;
@@ -88,7 +132,12 @@ SDecorationPositioningInfo CGlassDecoration::getPositioningInfo() {
 void CGlassDecoration::onPositioningReply(const SDecorationPositioningReply& reply) {}
 
 void CGlassDecoration::draw(PHLMONITOR monitor, float const& alpha) {
-    if (!g_pGlobalState || !resolveEnabled())
+    if (!g_pGlobalState)
+        return;
+
+    const bool enabled = resolveEnabled();
+    updateNoBlurProp(enabled);
+    if (!enabled)
         return;
 
     CGlassPassElement::SGlassPassData data{m_self, alpha};
