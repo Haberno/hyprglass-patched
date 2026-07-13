@@ -218,8 +218,17 @@ void CGlassDecoration::renderPass(PHLMONITOR monitor, const float& alpha) {
     float cornerRadius  = window->rounding() * monitorScale;
     float roundingPower = window->roundingPower();
 
+    // The render alpha Hyprland hands decorations is activeInactive * fade.
+    // Glass must follow fades (open/close, fullscreen, workspace moves) but
+    // not the active/inactive dimming or opacity rules: those make the surface
+    // more translucent — revealing more glass — and shouldn't wash out the
+    // glass pane itself. Rebuild the fade-only alpha from its components.
+    float glassAlpha = window->alphaTotalWithout(Desktop::View::WINDOW_ALPHA_ACTIVE);
+    if (const auto workspace = window->m_workspace; workspace && !window->m_pinned)
+        glassAlpha *= workspace->m_alpha->value();
+
     GlassRenderer::applyGlassEffect(m_sampleFramebuffer, source,
-                                     windowBox, transformBox, alpha,
+                                     windowBox, transformBox, glassAlpha,
                                      cornerRadius, roundingPower, m_samplePaddingRatio, ctx);
 }
 
