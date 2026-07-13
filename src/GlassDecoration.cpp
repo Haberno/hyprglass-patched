@@ -25,6 +25,7 @@ bool CGlassDecoration::resolveEnabled() const {
         const auto window = m_window.lock();
         if (window && window->m_ruleApplicator) {
             const auto& tags = window->m_ruleApplicator->m_tagKeeper;
+            // isTagged() already matches dynamic tags ("tag*") — no stripping needed here.
             // Disabled tag wins over enabled tag if both are present.
             if (tags.isTagged(std::string(TAG_DISABLED)))
                 return false;
@@ -63,7 +64,7 @@ std::string CGlassDecoration::resolvePresetName() const {
         if (window && window->m_ruleApplicator) {
             for (const auto& tag : window->m_ruleApplicator->m_tagKeeper.getTags()) {
                 if (tag.starts_with(TAG_PRESET_PREFIX))
-                    return tag.substr(TAG_PRESET_PREFIX.size());
+                    return stripDynamicTagMarker(tag.substr(TAG_PRESET_PREFIX.size()));
             }
         }
 
