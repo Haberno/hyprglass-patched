@@ -8,6 +8,7 @@
 #include <hyprland/src/render/Framebuffer.hpp>
 #include <hyprland/src/render/OpenGL.hpp>
 #include <hyprland/src/render/Renderer.hpp>
+#include <hyprland/src/SharedDefs.hpp>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -44,13 +45,21 @@ struct SGlobalState {
     // changes on that monitor. Layer surfaces compare to their cached value to
     // skip redundant blur work. Per-monitor avoids cross-monitor feedback loops
     // where re-sampling on an idle monitor captures its own stale glass output.
-    std::unordered_map<Monitor::CMonitor*, uint64_t> sceneGeneration;
+    // Keyed by MONITORID rather than CMonitor* so the code builds on both
+    // Hyprland <= 0.55.x (global CMonitor) and git (Monitor::CMonitor), and a
+    // stale entry can never alias a reallocated monitor object.
+    std::unordered_map<MONITORID, uint64_t> sceneGeneration;
 
-    uint64_t getSceneGeneration(Monitor::CMonitor* mon) const {
-        auto it = sceneGeneration.find(mon);
+    uint64_t getSceneGeneration(const PHLMONITOR& mon) const {
+        if (!mon)
+            return 0;
+        auto it = sceneGeneration.find(mon->m_id);
         return it != sceneGeneration.end() ? it->second : 0;
     }
-    void bumpSceneGeneration(Monitor::CMonitor* mon) { sceneGeneration[mon]++; }
+    void bumpSceneGeneration(const PHLMONITOR& mon) {
+        if (mon)
+            sceneGeneration[mon->m_id]++;
+    }
 
     // renderLayer hook
     CFunctionHook* renderLayerHook = nullptr;

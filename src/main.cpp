@@ -228,7 +228,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     // Z-order / visibility changes invalidate layer glass caches on the affected monitor only.
     // Per-monitor to avoid triggering re-samples on idle monitors (feedback loop).
     auto bumpWindowMonitor = [&](PHLWINDOW w) {
-        if (w) if (auto mon = w->m_monitor.lock()) g_pGlobalState->bumpSceneGeneration(mon.get());
+        if (w) if (auto mon = w->m_monitor.lock()) g_pGlobalState->bumpSceneGeneration(mon);
     };
     static auto onWindowActive = Event::bus()->m_events.window.active.listen(
         [=](PHLWINDOW w, Desktop::eFocusReason) { bumpWindowMonitor(w); });
@@ -238,7 +238,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
         [=](PHLWINDOW w, PHLWORKSPACE) { bumpWindowMonitor(w); });
     static auto onWorkspaceActive = Event::bus()->m_events.workspace.active.listen(
         [&](PHLWORKSPACE ws) {
-            if (ws) if (auto mon = ws->m_monitor.lock()) g_pGlobalState->bumpSceneGeneration(mon.get());
+            if (ws) if (auto mon = ws->m_monitor.lock()) g_pGlobalState->bumpSceneGeneration(mon);
         });
 
     // Clear pending presets/layers before config re-parse, commit after

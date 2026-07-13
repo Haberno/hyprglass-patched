@@ -115,7 +115,7 @@ void CGlassDecoration::draw(PHLMONITOR monitor, float const& alpha) {
         // NOT from damageEntire() which fires in the damage system feedback path.
         if (moved || wsAnimating) {
             if (auto mon = window->m_monitor.lock())
-                g_pGlobalState->bumpSceneGeneration(mon.get());
+                g_pGlobalState->bumpSceneGeneration(mon);
         }
     }
 }
