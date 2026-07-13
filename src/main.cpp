@@ -16,6 +16,7 @@
 #include <hyprland/src/debug/log/Logger.hpp>
 #include <hyprland/src/event/EventBus.hpp>
 
+#include <cstdlib>
 #include <sstream>
 
 static void clearLayerGlassOnClose(PHLLS layerSurface) {
@@ -211,10 +212,22 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     };
 
     if (abiSuffix(HASH) != abiSuffix(CLIENT_HASH)) {
-        HyprlandAPI::addNotification(PHANDLE,
-            std::format("[{}] Version mismatch! (plugin: {}, running: {})", PLUGIN_NAME, HASH, CLIENT_HASH),
-            CHyprColor{1.0, 0.2, 0.2, 1.0}, 5000);
-        throw std::runtime_error("Version mismatch");
+        // Last-resort escape hatch for exotic setups: HYPRGLASS_SKIP_VERSION_CHECK
+        // (set in Hyprland's own environment) downgrades the hard failure to a
+        // warning. Unsupported — a real ABI mismatch can crash Hyprland.
+        const char* skipEnv  = std::getenv("HYPRGLASS_SKIP_VERSION_CHECK");
+        const bool  skip     = skipEnv && *skipEnv && std::string_view{skipEnv} != "0";
+        if (!skip) {
+            HyprlandAPI::addNotification(PHANDLE,
+                std::format("[{}] Version mismatch! (plugin: {}, running: {})", PLUGIN_NAME, HASH, CLIENT_HASH),
+                CHyprColor{1.0, 0.2, 0.2, 1.0}, 5000);
+            throw std::runtime_error("Version mismatch");
+        }
+        HyprlandAPI::addNotificationV2(PHANDLE, {
+            {"text", std::format("[{}] Version mismatch ignored (HYPRGLASS_SKIP_VERSION_CHECK) — ABI differences may crash Hyprland", PLUGIN_NAME)},
+            {"time", (uint64_t)8000},
+            {"color", CHyprColor{1.0, 0.8, 0.2, 1.0}},
+        });
     }
 
     g_pGlobalState = std::make_unique<SGlobalState>();
