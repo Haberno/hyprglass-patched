@@ -33,8 +33,11 @@ struct SMaskInfo {
 void sampleBackground(SP<Render::IFramebuffer>& sampleFramebuffer, SP<Render::IFramebuffer> sourceFramebuffer,
                        CBox box, Vector2D& outPaddingRatio, int downscale = 1);
 
+// callerFramebuffer is re-bound after the blur ping-pong; the viewport is
+// restored from its size so it always matches the re-bound framebuffer
+// (monitor fields would be wrong on 90°/270° transformed monitors).
 void blurBackground(SP<Render::IFramebuffer> sampleFramebuffer, float radius, int iterations,
-                    GLuint callerFramebufferID, int viewportWidth, int viewportHeight);
+                    SP<Render::IFramebuffer> callerFramebuffer);
 
 // When mask is non-null (layers only), the shader composites the surface content
 // over the glass effect in a single pass. When mask is null (windows), the shader

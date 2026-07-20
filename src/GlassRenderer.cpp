@@ -93,9 +93,9 @@ void sampleBackground(SP<Render::IFramebuffer>& sampleFramebuffer, SP<Render::IF
 }
 
 void blurBackground(SP<Render::IFramebuffer> sampleFramebuffer, float radius, int iterations,
-                    GLuint callerFramebufferID, int viewportWidth, int viewportHeight) {
+                    SP<Render::IFramebuffer> callerFramebuffer) {
     auto& shaderManager = g_pGlobalState->shaderManager;
-    if (!sampleFramebuffer || radius <= 0.0f || iterations <= 0 || !shaderManager.isInitialized())
+    if (!sampleFramebuffer || !callerFramebuffer || radius <= 0.0f || iterations <= 0 || !shaderManager.isInitialized())
         return;
 
     int width  = static_cast<int>(sampleFramebuffer->m_size.x);
@@ -140,10 +140,15 @@ void blurBackground(SP<Render::IFramebuffer> sampleFramebuffer, float radius, in
         glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
     }
 
-    // Restore caller's GL state without querying (avoids pipeline stalls)
-    glBindFramebuffer(GL_FRAMEBUFFER, callerFramebufferID);
+    // Restore caller's GL state without querying (avoids pipeline stalls).
+    // The viewport must match the re-bound framebuffer's own size: monitor
+    // sizes are wrong here on 90°/270° monitors, where m_transformedSize is
+    // swapped relative to the framebuffer's native orientation (#41).
+    glBindFramebuffer(GL_FRAMEBUFFER, fbId(callerFramebuffer));
     glBindVertexArray(0);
-    g_pHyprOpenGL->setViewport(0, 0, viewportWidth, viewportHeight);
+    g_pHyprOpenGL->setViewport(0, 0,
+        static_cast<int>(callerFramebuffer->m_size.x),
+        static_cast<int>(callerFramebuffer->m_size.y));
 }
 
 void applyGlassEffect(SP<Render::IFramebuffer> sampleFramebuffer, SP<Render::IFramebuffer> targetFramebuffer,

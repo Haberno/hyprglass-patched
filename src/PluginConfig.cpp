@@ -34,6 +34,7 @@ static int handleLuaConfig(lua_State* L);
 
 void registerConfig(HANDLE handle) {
     addConfigValue<Config::Values::Int>(handle, ConfigKeys::ENABLED, Config::INTEGER{1});
+    addConfigValue<Config::Values::Int>(handle, ConfigKeys::MANAGE_WINDOW_BLUR, Config::INTEGER{1});
     addConfigValue<Config::Values::String>(handle, ConfigKeys::DEFAULT_THEME, Config::STRING{"dark"});
     addConfigValue<Config::Values::String>(handle, ConfigKeys::DEFAULT_PRESET, Config::STRING{"default"});
 
@@ -152,7 +153,8 @@ static void initOverridablePointers(HANDLE handle, SOverridableConfig& layer,
 }
 
 void initConfigPointers(HANDLE handle, SPluginConfig& config) {
-    config.enabled       = getStaticPtr<Hyprlang::INT>(handle, ConfigKeys::ENABLED);
+    config.enabled          = getStaticPtr<Hyprlang::INT>(handle, ConfigKeys::ENABLED);
+    config.manageWindowBlur = getStaticPtr<Hyprlang::INT>(handle, ConfigKeys::MANAGE_WINDOW_BLUR);
     config.defaultTheme  = getStringPtr(handle, ConfigKeys::DEFAULT_THEME);
     config.defaultPreset = getStringPtr(handle, ConfigKeys::DEFAULT_PRESET);
 
@@ -331,6 +333,11 @@ Hyprlang::CParseResult handlePresetKeyword(const char* /*command*/, const char* 
         return result;
     }
 
+    // Normalize names so presets defined as "firefox*" (old workaround for
+    // dynamic tags) and "firefox" register under the same key.
+    presetName = stripDynamicTagMarker(presetName);
+    inherits   = stripDynamicTagMarker(inherits);
+
     // Get or create the preset entry
     auto& preset = s_pendingPresets[presetName];
     preset.name = presetName;
@@ -436,7 +443,7 @@ static int handleLuaPreset(lua_State* L) {
 
     // Table: preset("clear", { glass_opacity = 0.8, dark = { brightness = 0.7 }, ... })
     if (nargs == 2 && lua_isstring(L, 1) && lua_istable(L, 2)) {
-        std::string baseName = lua_tostring(L, 1);
+        std::string baseName = stripDynamicTagMarker(lua_tostring(L, 1));
         auto& preset = s_pendingPresets[baseName];
         preset.name = baseName;
 
@@ -446,7 +453,7 @@ static int handleLuaPreset(lua_State* L) {
             const char* key = lua_tostring(L, -2);
 
             if (strcmp(key, "inherits") == 0 && lua_isstring(L, -1)) {
-                preset.inherits = lua_tostring(L, -1);
+                preset.inherits = stripDynamicTagMarker(lua_tostring(L, -1));
             } else if (strcmp(key, "dark") == 0 && lua_istable(L, -1)) {
                 readPresetValuesFromTable(L, lua_gettop(L), preset.dark);
             } else if (strcmp(key, "light") == 0 && lua_istable(L, -1)) {

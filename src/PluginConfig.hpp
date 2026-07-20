@@ -18,6 +18,16 @@ inline constexpr std::string_view TAG_PRESET_PREFIX = "hyprglass_preset_";
 inline constexpr std::string_view TAG_ENABLED  = "hyprglass_enabled";
 inline constexpr std::string_view TAG_DISABLED = "hyprglass_disabled";
 
+// Hyprland stores dynamic tags (`tagwindow` dispatcher, dynamic window rules)
+// with a trailing '*'. CTagKeeper::isTagged() normalizes this for exact lookups,
+// but code iterating getTags() or registering preset names must strip it itself
+// so "firefox" and "firefox*" refer to the same preset.
+inline std::string stripDynamicTagMarker(std::string_view tag) {
+    if (tag.ends_with('*'))
+        tag.remove_suffix(1);
+    return std::string(tag);
+}
+
 // Sentinel: "not set by user, inherit from parent layer"
 inline constexpr Hyprlang::FLOAT SENTINEL_FLOAT = -1.0;
 inline constexpr Hyprlang::INT   SENTINEL_INT   = -1;
@@ -27,9 +37,10 @@ inline constexpr int MAX_PRESET_INHERITANCE_DEPTH = 8;
 namespace ConfigKeys {
 
 // Global-only
-inline constexpr auto ENABLED        = "plugin:hyprglass:enabled";
-inline constexpr auto DEFAULT_THEME  = "plugin:hyprglass:default_theme";
-inline constexpr auto DEFAULT_PRESET = "plugin:hyprglass:default_preset";
+inline constexpr auto ENABLED            = "plugin:hyprglass:enabled";
+inline constexpr auto DEFAULT_THEME      = "plugin:hyprglass:default_theme";
+inline constexpr auto DEFAULT_PRESET     = "plugin:hyprglass:default_preset";
+inline constexpr auto MANAGE_WINDOW_BLUR = "plugin:hyprglass:manage_window_blur";
 
 // Preset keyword, registered as unscoped because Hyprlang does not dispatch
 // scoped keyword handlers inside the plugin special category.
@@ -175,7 +186,12 @@ inline std::string_view readStringConfig(const StringConfigPtr& ptr) {
 }
 
 struct SPluginConfig {
-    Hyprlang::INT* const* enabled       = nullptr;
+    Hyprlang::INT* const* enabled          = nullptr;
+    // Glass replaces Hyprland's blur for glassed windows: when set, the plugin
+    // marks them with the noblur window property so Hyprland composites them
+    // against the live framebuffer (which contains the glass) instead of its
+    // pre-frame cached blur.
+    Hyprlang::INT* const* manageWindowBlur = nullptr;
     StringConfigPtr      defaultTheme;
     StringConfigPtr      defaultPreset;
 

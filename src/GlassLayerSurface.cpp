@@ -108,7 +108,7 @@ void CGlassLayerSurface::damageIfMoved() {
             g_pHyprRenderer->damageBox(box);
 
         if (monitor)
-            g_pGlobalState->bumpSceneGeneration(monitor.get());
+            g_pGlobalState->bumpSceneGeneration(monitor);
     }
 }
 
@@ -137,7 +137,7 @@ void CGlassLayerSurface::sampleAndRedirect(PHLMONITOR monitor, float alpha) {
     // When only the layer surface content changed (e.g. waybar clock tick)
     // but no window moved behind us, we reuse the cached blurred background.
     // This skips the most expensive GPU work (blit + 6 blur passes).
-    const uint64_t currentGeneration = g_pGlobalState->getSceneGeneration(monitor.get());
+    const uint64_t currentGeneration = g_pGlobalState->getSceneGeneration(monitor);
     const auto activeWs = monitor->m_activeWorkspace;
     const bool isAnimating = layerSurface->m_realPosition->isBeingAnimated() ||
                              layerSurface->m_realSize->isBeingAnimated() ||
@@ -163,9 +163,7 @@ void CGlassLayerSurface::sampleAndRedirect(PHLMONITOR monitor, float alpha) {
 
         float blurRadius     = blurStrength * 12.0f / downscale;
         int blurIterations   = std::clamp(static_cast<int>(resolvePresetInt(ctx, &SPresetValues::blurIterations, &SOverridableConfig::blurIterations)), 1, 5);
-        int viewportWidth    = static_cast<int>(g_pHyprRenderer->m_renderData.pMonitor->m_transformedSize.x);
-        int viewportHeight   = static_cast<int>(g_pHyprRenderer->m_renderData.pMonitor->m_transformedSize.y);
-        GlassRenderer::blurBackground(m_sampleFramebuffer, blurRadius, blurIterations, dynamic_cast<Render::GL::CGLFramebuffer*>(source.get())->getFBID(), viewportWidth, viewportHeight);
+        GlassRenderer::blurBackground(m_sampleFramebuffer, blurRadius, blurIterations, source);
 
         m_hasCachedSample      = true;
         m_lastSceneGeneration  = currentGeneration;
@@ -178,15 +176,18 @@ void CGlassLayerSurface::sampleAndRedirect(PHLMONITOR monitor, float alpha) {
     int monitorWidth  = static_cast<int>(monitor->m_transformedSize.x);
     int monitorHeight = static_cast<int>(monitor->m_transformedSize.y);
 
-    // Force ARGB8888 for the temp FBO: the mask shader needs alpha precision.
-    // Monitor FBOs use XRGB formats (no usable alpha); XRGB2101010 (10-bit)
-    // has only 2-bit alpha, quantizing values below ~0.17 to zero and breaking
-    // the mask discard for low-opacity layers.
+    // In FP16/HDR mode, the source FB uses RGBA16F which has full alpha precision.
+    // Use the source format to avoid clipping HDR color values.
+    // In SDR mode, force ARGB8888 because monitor FBOs (XRGB2101010 etc.) have
+    // limited/no alpha, which would quantize mask values and break the discard.
+    DRMFormat tempFormat = (monitor->useFP16()) ? source->m_drmFormat : DRM_FORMAT_ARGB8888;
+
     if (!m_surfaceTempFramebuffer)
         m_surfaceTempFramebuffer = g_pHyprRenderer->createFB("hyprglass-layer-temp");
 
-    if (m_surfaceTempFramebuffer->m_size.x != monitorWidth || m_surfaceTempFramebuffer->m_size.y != monitorHeight)
-        m_surfaceTempFramebuffer->alloc(monitorWidth, monitorHeight, DRM_FORMAT_ARGB8888);
+    if (m_surfaceTempFramebuffer->m_size.x != monitorWidth || m_surfaceTempFramebuffer->m_size.y != monitorHeight ||
+        m_surfaceTempFramebuffer->m_drmFormat != tempFormat)
+        m_surfaceTempFramebuffer->alloc(monitorWidth, monitorHeight, tempFormat);
 
     m_savedCurrentFB = source;
 
