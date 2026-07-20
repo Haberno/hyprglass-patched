@@ -162,12 +162,12 @@ static void hkRenderLayer(Render::IHyprRenderer* thisptr, PHLLS layerSurface, PH
             it = layerStates.emplace(rawPtr, std::make_shared<CGlassLayerSurface>(layerSurface)).first;
         }
 
-        if (layerSurface->m_fadingOut) {
+        if (!layerSurface->m_mapped) {
             ((renderLayerFn)g_pGlobalState->renderLayerHook->m_original)(thisptr, layerSurface, monitor, now, popups, lockscreen);
             return;
         }
 
-        float alpha = layerSurface->m_alpha->value();
+        float alpha = layerSurface->alpha().getTotal();
         if (alpha < 0.001f) {
             ((renderLayerFn)g_pGlobalState->renderLayerHook->m_original)(thisptr, layerSurface, monitor, now, popups, lockscreen);
             return;
@@ -280,7 +280,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
         HyprlandAPI::invokeHyprctlCommand("keyword", "decoration:shadow:enabled true");
     }
 
-    for (auto& window : g_pCompositor->m_windows) {
+    for (auto& window : Desktop::viewState()->windows()) {
         if (window->isHidden() || !window->m_isMapped)
             continue;
         onNewWindow(window);

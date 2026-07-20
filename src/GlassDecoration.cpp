@@ -151,8 +151,8 @@ void CGlassDecoration::draw(PHLMONITOR monitor, float const& alpha) {
         if (wsAnimating)
             damageEntire();
 
-        const auto currentPosition = window->m_realPosition->value();
-        const auto currentSize = window->m_realSize->value();
+        const auto currentPosition = window->position(Desktop::View::IGeometric::GEOMETRIC_CURRENT);
+        const auto currentSize = window->size(Desktop::View::IGeometric::GEOMETRIC_CURRENT);
         const bool moved = currentPosition != m_lastPosition || currentSize != m_lastSize;
         if (moved) {
             damageEntire();

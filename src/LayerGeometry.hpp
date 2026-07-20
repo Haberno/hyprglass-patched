@@ -13,7 +13,8 @@ namespace LayerGeometry {
         return std::nullopt;
 
     // Full animated layer geometry in monitor-local framebuffer pixels.
-    auto box = CBox{layerSurface->m_realPosition->value(), layerSurface->m_realSize->value()};
+    auto box = CBox{layerSurface->position(Desktop::View::IGeometric::GEOMETRIC_CURRENT),
+                    layerSurface->size(Desktop::View::IGeometric::GEOMETRIC_CURRENT)};
     box.translate(-monitor->m_position);
     box.scale(monitor->m_scale).round().noNegativeSize();
 
