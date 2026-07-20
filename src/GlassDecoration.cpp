@@ -17,6 +17,50 @@ CGlassDecoration::CGlassDecoration(PHLWINDOW window)
     : IHyprWindowDecoration(window), m_window(window) {
 }
 
+CGlassDecoration::~CGlassDecoration() {
+    withdrawNoBlur();
+}
+
+// Glass replaces Hyprland's blur for this window. Mark glassed windows with
+// the noblur property so Hyprland composites their translucency against the
+// live framebuffer (which contains the glass) instead of its pre-frame cached
+// blur snapshot, which is captured before plugin decorations render (#46).
+void CGlassDecoration::updateNoBlurProp(bool glassEnabled) {
+    const auto& config = g_pGlobalState->config;
+    const bool manage = config.manageWindowBlur && **config.manageWindowBlur;
+
+    if (!manage || !glassEnabled) {
+        withdrawNoBlur();
+        return;
+    }
+
+    if (m_noBlurApplied)
+        return;
+
+    try {
+        const auto window = m_window.lock();
+        if (window && window->m_ruleApplicator) {
+            window->m_ruleApplicator->noBlur().set(true, Desktop::Types::PRIORITY_SET_PROP);
+            m_noBlurApplied = true;
+            damageEntire();
+        }
+    } catch (...) {}
+}
+
+void CGlassDecoration::withdrawNoBlur() {
+    if (!m_noBlurApplied)
+        return;
+    m_noBlurApplied = false;
+
+    try {
+        const auto window = m_window.lock();
+        if (window && window->m_ruleApplicator) {
+            window->m_ruleApplicator->noBlur().unset(Desktop::Types::PRIORITY_SET_PROP);
+            damageEntire();
+        }
+    } catch (...) {}
+}
+
 bool CGlassDecoration::resolveEnabled() const {
     const auto& config = g_pGlobalState->config;
     const bool globalEnabled = config.enabled && **config.enabled;
@@ -25,6 +69,7 @@ bool CGlassDecoration::resolveEnabled() const {
         const auto window = m_window.lock();
         if (window && window->m_ruleApplicator) {
             const auto& tags = window->m_ruleApplicator->m_tagKeeper;
+            // isTagged() already matches dynamic tags ("tag*") — no stripping needed here.
             // Disabled tag wins over enabled tag if both are present.
             if (tags.isTagged(std::string(TAG_DISABLED)))
                 return false;
@@ -63,7 +108,7 @@ std::string CGlassDecoration::resolvePresetName() const {
         if (window && window->m_ruleApplicator) {
             for (const auto& tag : window->m_ruleApplicator->m_tagKeeper.getTags()) {
                 if (tag.starts_with(TAG_PRESET_PREFIX))
-                    return tag.substr(TAG_PRESET_PREFIX.size());
+                    return stripDynamicTagMarker(tag.substr(TAG_PRESET_PREFIX.size()));
             }
         }
 
@@ -87,7 +132,12 @@ SDecorationPositioningInfo CGlassDecoration::getPositioningInfo() {
 void CGlassDecoration::onPositioningReply(const SDecorationPositioningReply& reply) {}
 
 void CGlassDecoration::draw(PHLMONITOR monitor, float const& alpha) {
-    if (!g_pGlobalState || !resolveEnabled())
+    if (!g_pGlobalState)
+        return;
+
+    const bool enabled = resolveEnabled();
+    updateNoBlurProp(enabled);
+    if (!enabled)
         return;
 
     CGlassPassElement::SGlassPassData data{m_self, alpha};
@@ -101,8 +151,8 @@ void CGlassDecoration::draw(PHLMONITOR monitor, float const& alpha) {
         if (wsAnimating)
             damageEntire();
 
-        const auto currentPosition = window->m_realPosition->value();
-        const auto currentSize = window->m_realSize->value();
+        const auto currentPosition = window->position(Desktop::View::IGeometric::GEOMETRIC_CURRENT);
+        const auto currentSize = window->size(Desktop::View::IGeometric::GEOMETRIC_CURRENT);
         const bool moved = currentPosition != m_lastPosition || currentSize != m_lastSize;
         if (moved) {
             damageEntire();
@@ -114,7 +164,7 @@ void CGlassDecoration::draw(PHLMONITOR monitor, float const& alpha) {
         // NOT from damageEntire() which fires in the damage system feedback path.
         if (moved || wsAnimating) {
             if (auto mon = window->m_monitor.lock())
-                g_pGlobalState->bumpSceneGeneration(mon.get());
+                g_pGlobalState->bumpSceneGeneration(mon);
         }
     }
 }
@@ -162,16 +212,23 @@ void CGlassDecoration::renderPass(PHLMONITOR monitor, const float& alpha) {
 
     float blurRadius     = blurStrength * 12.0f / downscale;
     int blurIterations   = std::clamp(static_cast<int>(resolvePresetInt(ctx, &SPresetValues::blurIterations, &SOverridableConfig::blurIterations)), 1, 5);
-    int viewportWidth    = static_cast<int>(g_pHyprRenderer->m_renderData.pMonitor->m_transformedSize.x);
-    int viewportHeight   = static_cast<int>(g_pHyprRenderer->m_renderData.pMonitor->m_transformedSize.y);
-    GlassRenderer::blurBackground(m_sampleFramebuffer, blurRadius, blurIterations, dynamic_cast<Render::GL::CGLFramebuffer*>(source.get())->getFBID(), viewportWidth, viewportHeight);
+    GlassRenderer::blurBackground(m_sampleFramebuffer, blurRadius, blurIterations, source);
 
     float monitorScale  = monitor->m_scale;
     float cornerRadius  = window->rounding() * monitorScale;
     float roundingPower = window->roundingPower();
 
+    // The render alpha Hyprland hands decorations is activeInactive * fade.
+    // Glass must follow fades (open/close, fullscreen, workspace moves) but
+    // not the active/inactive dimming or opacity rules: those make the surface
+    // more translucent — revealing more glass — and shouldn't wash out the
+    // glass pane itself. Rebuild the fade-only alpha from its components.
+    float glassAlpha = window->alphaTotalWithout(Desktop::View::WINDOW_ALPHA_ACTIVE);
+    if (const auto workspace = window->m_workspace; workspace && !window->m_pinned)
+        glassAlpha *= workspace->m_alpha->value();
+
     GlassRenderer::applyGlassEffect(m_sampleFramebuffer, source,
-                                     windowBox, transformBox, alpha,
+                                     windowBox, transformBox, glassAlpha,
                                      cornerRadius, roundingPower, m_samplePaddingRatio, ctx);
 }
 
