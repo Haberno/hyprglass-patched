@@ -1,9 +1,40 @@
 
+## [v0.7.0](https://github.com/Hyprnux/hyprglass/compare/v0.6.4...v0.7.0) - 2026-07-20
+
+### Bug Fixes
+
+* don't dim glass by inactive alpha and opacity rules
+* use source framebuffer format for layer temp FBO in HDR mode
+* set noblur on glassed windows, glass replaces hyprland blur ([#46](https://github.com/Hyprnux/hyprglass/issues/46))
+* use MONITORID instead of Monitor::CMonitor, unavailable before hyprland 0.56 ([#44](https://github.com/Hyprnux/hyprglass/issues/44))
+* relax version check to compare ABI suffix only
+* qualify CMonitor with Monitor:: namespace
+* wrong viewport restore after blur on transformed monitors ([#41](https://github.com/Hyprnux/hyprglass/issues/41))
+* match dynamic window tags for preset selection ([#45](https://github.com/Hyprnux/hyprglass/issues/45))
+
+### Build System
+
+* update hyprland compatibility to v0.56.0
+
+### Documentation
+
+* add troubleshooting section
+
+### Features
+
+* compatibility hyprland 0.56
+* add HYPRGLASS_SKIP_VERSION_CHECK escape hatch ([#44](https://github.com/Hyprnux/hyprglass/issues/44))
+
+
 ## [v0.6.4](https://github.com/Hyprnux/hyprglass/compare/v0.6.3...v0.6.4) - 2026-06-12
 
 ### Build System
 
 * update hyprland compatibility to v0.55.4
+
+### Chores
+
+* **release:** v0.6.4 [skip ci]
 
 
 ## [v0.6.3](https://github.com/Hyprnux/hyprglass/compare/v0.6.2...v0.6.3) - 2026-06-08
