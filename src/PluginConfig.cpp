@@ -46,6 +46,7 @@ void registerConfig(HANDLE handle) {
     addConfigValue<Config::Values::String>(handle, ConfigKeys::LAYERS_NAMESPACE_PRESETS, Config::STRING{});
     addConfigValue<Config::Values::String>(handle, ConfigKeys::LAYERS_NAMESPACE_MASK_THRESHOLDS, Config::STRING{});
     addConfigValue<Config::Values::String>(handle, ConfigKeys::LAYERS_LIVE_NAMESPACES, Config::STRING{});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::LAYERS_BACKGROUND_EFFECT_RADIUS, Config::FLOAT{0.0});
 
     // Global level — real defaults for effect settings,
     // sentinel for theme-sensitive settings (fallback to hardcoded theme defaults)
@@ -166,6 +167,7 @@ void initConfigPointers(HANDLE handle, SPluginConfig& config) {
     config.layersNamespacePresets         = getStringPtr(handle, ConfigKeys::LAYERS_NAMESPACE_PRESETS);
     config.layersNamespaceMaskThresholds = getStringPtr(handle, ConfigKeys::LAYERS_NAMESPACE_MASK_THRESHOLDS);
     config.layersLiveNamespaces    = getStringPtr(handle, ConfigKeys::LAYERS_LIVE_NAMESPACES);
+    config.layersBackgroundEffectRadius = getStaticPtr<Hyprlang::FLOAT>(handle, ConfigKeys::LAYERS_BACKGROUND_EFFECT_RADIUS);
 
     initOverridablePointers(handle, config.global,
         ConfigKeys::BLUR_STRENGTH, ConfigKeys::BLUR_ITERATIONS,
