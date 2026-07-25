@@ -73,6 +73,10 @@ inline constexpr auto LAYERS_PRESET             = "plugin:hyprglass:layers:prese
 inline constexpr auto LAYERS_NAMESPACE_PRESETS          = "plugin:hyprglass:layers:namespace_presets";
 inline constexpr auto LAYERS_NAMESPACE_MASK_THRESHOLDS  = "plugin:hyprglass:layers:namespace_mask_thresholds";
 inline constexpr auto LAYERS_LIVE_NAMESPACES    = "plugin:hyprglass:layers:live_namespaces";
+// Corner radius applied to regions a client publishes via ext-background-effect-v1.
+// The protocol carries only a region, no rounding, so clients that round their own
+// widget backgrounds (e.g. Noctalia v5's bar) need the radius supplied here.
+inline constexpr auto LAYERS_BACKGROUND_EFFECT_RADIUS = "plugin:hyprglass:layers:background_effect_radius";
 
 // Overridable — dark theme overrides
 inline constexpr auto DARK_BLUR_STRENGTH        = "plugin:hyprglass:dark:blur_strength";
@@ -203,6 +207,7 @@ struct SPluginConfig {
     StringConfigPtr       layersNamespacePresets;
     StringConfigPtr       layersNamespaceMaskThresholds;
     StringConfigPtr       layersLiveNamespaces;
+    Hyprlang::FLOAT* const* layersBackgroundEffectRadius = nullptr;
 
     SOverridableConfig global;
     SOverridableConfig dark;

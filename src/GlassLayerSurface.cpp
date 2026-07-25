@@ -7,10 +7,41 @@
 #include <algorithm>
 #include <cmath>
 #include <hyprland/src/desktop/Workspace.hpp>
+#include <hyprland/src/desktop/view/WLSurface.hpp>
 #include <GLES3/gl32.h>
 #include <hyprland/src/render/OpenGL.hpp>
 #include <hyprland/src/render/Renderer.hpp>
 #include <hyprutils/math/Misc.hpp>
+
+// Regions the client published via ext-background-effect-v1. Noctalia v5 reports
+// one rect per bar widget this way, which is exactly what the region path wants —
+// no external IPC and it follows widget layout changes on its own.
+// set_blur_region is surface-local logical, so offset by the layer's animated
+// position to reach the monitor-global logical space SGlassRegion uses.
+static std::vector<SGlassRegion> backgroundEffectRegions(PHLLS layerSurface, float radius) {
+    std::vector<SGlassRegion> out;
+
+    const auto wlSurface = layerSurface->wlSurface();
+    if (!wlSurface || !wlSurface->m_hasBackgroundEffect || wlSurface->m_blurRegion.empty())
+        return out;
+
+    const auto origin = layerSurface->position(Desktop::View::IGeometric::GEOMETRIC_CURRENT);
+    if (!std::isfinite(origin.x) || !std::isfinite(origin.y))
+        return out;
+
+    for (const auto& rect : wlSurface->m_blurRegion.getRects()) {
+        const float w = static_cast<float>(rect.x2 - rect.x1);
+        const float h = static_cast<float>(rect.y2 - rect.y1);
+        if (w <= 0.f || h <= 0.f)
+            continue;
+
+        out.push_back(SGlassRegion{static_cast<float>(rect.x1) + static_cast<float>(origin.x),
+                                   static_cast<float>(rect.y1) + static_cast<float>(origin.y),
+                                   w, h, radius});
+    }
+
+    return out;
+}
 
 static CBox transformedLayerBox(CBox pixelBox, PHLMONITOR monitor) {
     const auto transform = Math::wlTransformToHyprutils(Math::invertTransform(monitor->m_transform));
@@ -255,21 +286,61 @@ void CGlassLayerSurface::compositeAndRestore(PHLMONITOR monitor, float alpha) {
     // per-quad bezel refraction, fresnel rim, corner SDF). The layer's own
     // rendered content then composites on top glass-free via a zeroed preset.
     auto regIt = g_pGlobalState->layerNamespaceRegions.find(layerSurface->m_namespace);
-    if (regIt != g_pGlobalState->layerNamespaceRegions.end() && !regIt->second.empty()) {
-        const auto& regions = regIt->second;
+    const bool hasManualRegions = regIt != g_pGlobalState->layerNamespaceRegions.end() && !regIt->second.empty();
+
+    // Fall back to whatever the client published itself via ext-background-effect-v1.
+    // An explicit `hyprctl glassregions` set still wins, so a manual override stays possible.
+    std::vector<SGlassRegion> publishedRegions;
+    if (!hasManualRegions) {
+        float radius = 0.0f;
+        if (g_pGlobalState->config.layersBackgroundEffectRadius)
+            radius = static_cast<float>(**g_pGlobalState->config.layersBackgroundEffectRadius);
+        publishedRegions = backgroundEffectRegions(layerSurface, std::max(radius, 0.0f));
+    }
+
+    const auto& regions = hasManualRegions ? regIt->second : publishedRegions;
+
+    // Optional pane spanning every element, drawn beneath them so the elements
+    // read as raised panes instead of being the only glass on the surface. Its
+    // rect is the bounding box of the elements, which tracks the content area
+    // rather than the layer box (that includes shadow margin the client never
+    // paints). A client cannot ask for this over ext-background-effect-v1: that
+    // protocol carries a pixman region, so a rect enclosing the element rects
+    // would union them away. Region lists here are plain vectors, so overlap is
+    // fine -- each entry still gets its own quad.
+    std::vector<SGlassRegion> regionsWithPane;
+    if (!regions.empty() && g_pGlobalState->layerNamespaceLayerPane.contains(layerSurface->m_namespace)) {
+        SGlassRegion pane = regions.front();
+        float x1 = pane.x, y1 = pane.y, x2 = pane.x + pane.w, y2 = pane.y + pane.h;
+        for (const auto& r : regions) {
+            x1 = std::min(x1, r.x);
+            y1 = std::min(y1, r.y);
+            x2 = std::max(x2, r.x + r.w);
+            y2 = std::max(y2, r.y + r.h);
+        }
+        pane.x = x1;
+        pane.y = y1;
+        pane.w = x2 - x1;
+        pane.h = y2 - y1;
+        regionsWithPane.reserve(regions.size() + 1);
+        regionsWithPane.push_back(pane);
+        regionsWithPane.insert(regionsWithPane.end(), regions.begin(), regions.end());
+    }
+
+    const auto& drawRegions = regionsWithPane.empty() ? regions : regionsWithPane;
+    if (!drawRegions.empty()) {
         float blurStrength = resolvePresetFloat(ctx, &SPresetValues::blurStrength, &SOverridableConfig::blurStrength);
         int   downscale    = blurStrength >= GlassRenderer::BLUR_DOWNSCALE_THRESHOLD ? GlassRenderer::BLUR_DOWNSCALE_MAX : 1;
         float blurRadius   = blurStrength * 12.0f / downscale;
         int   blurIters    = std::clamp(static_cast<int>(resolvePresetInt(ctx, &SPresetValues::blurIterations, &SOverridableConfig::blurIterations)), 1, 5);
         int   monW         = static_cast<int>(monitor->m_transformedSize.x);
         int   monH         = static_cast<int>(monitor->m_transformedSize.y);
-        auto  targetFBID   = dynamic_cast<Render::GL::CGLFramebuffer*>(target.get())->getFBID();
 
-        if (m_regionFramebuffers.size() < regions.size())
-            m_regionFramebuffers.resize(regions.size());
+        if (m_regionFramebuffers.size() < drawRegions.size())
+            m_regionFramebuffers.resize(drawRegions.size());
 
-        for (size_t i = 0; i < regions.size(); ++i) {
-            const auto& r = regions[i];
+        for (size_t i = 0; i < drawRegions.size(); ++i) {
+            const auto& r = drawRegions[i];
             CBox rr{static_cast<double>(r.x), static_cast<double>(r.y), static_cast<double>(r.w), static_cast<double>(r.h)};
             rr.translate(-monitor->m_position);
             rr.scale(monitor->m_scale).round().noNegativeSize();
@@ -279,7 +350,7 @@ void CGlassLayerSurface::compositeAndRestore(PHLMONITOR monitor, float alpha) {
             Vector2D pad;
             GlassRenderer::sampleBackground(m_regionFramebuffers[i], target, rt, pad, downscale);
             if (blurRadius > 0.05f)
-                GlassRenderer::blurBackground(m_regionFramebuffers[i], blurRadius, blurIters, targetFBID, monW, monH);
+                GlassRenderer::blurBackground(m_regionFramebuffers[i], blurRadius, blurIters, target);
             GlassRenderer::applyGlassEffect(m_regionFramebuffers[i], target, rr, rt, alpha,
                                              r.radius * static_cast<float>(monitor->m_scale), 2.0f, pad, ctx, nullptr);
         }

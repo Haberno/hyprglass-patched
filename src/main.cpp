@@ -15,6 +15,7 @@
 #include <hyprland/src/config/ConfigManager.hpp>
 #include <hyprland/src/debug/log/Logger.hpp>
 #include <hyprland/src/event/EventBus.hpp>
+#include <hyprland/src/state/MonitorState.hpp>
 
 #include <cstdlib>
 #include <sstream>
@@ -268,6 +269,19 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
                     g_pGlobalState->layerNamespaceContentContrast.erase(ns);
                 else
                     g_pGlobalState->layerNamespaceContentContrast[ns] = std::min(v, 1.f);
+            } else if (spec.rfind("layerpane ", 0) == 0) {
+                // glassregions <namespace> layerpane <0|1> — also draw one glass
+                // quad over the whole layer, beneath its per-element quads.
+                int v = 0;
+                if (std::sscanf(spec.c_str() + 10, "%d", &v) != 1)
+                    return "err: bad layerpane value";
+                if (v == 0)
+                    g_pGlobalState->layerNamespaceLayerPane.erase(ns);
+                else
+                    g_pGlobalState->layerNamespaceLayerPane.insert(ns);
+                for (auto& monitor : State::monitorState()->monitors())
+                    g_pHyprRenderer->damageMonitor(monitor);
+                return "ok";
             } else {
                 std::vector<SGlassRegion> regions;
                 std::stringstream rectStream(spec);
@@ -288,7 +302,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
             // damaging everything forced full redraws of BOTH monitors on
             // every region update (media progress bars update often).
             auto regIt = g_pGlobalState->layerNamespaceRegions.find(ns);
-            for (auto& monitor : g_pCompositor->m_monitors) {
+            for (auto& monitor : State::monitorState()->monitors()) {
                 if (regIt == g_pGlobalState->layerNamespaceRegions.end()) {
                     g_pHyprRenderer->damageMonitor(monitor); // clear: play safe
                     continue;

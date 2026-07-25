@@ -56,6 +56,12 @@ struct SGlobalState {
     // rendered content per-pixel toward the inverse/contrast of its local
     // backdrop. Runtime-set via `hyprctl glassregions <ns> contrast <v>`.
     std::unordered_map<std::string, float> layerNamespaceContentContrast;
+    // Namespaces that additionally get one glass quad spanning the whole layer,
+    // drawn beneath their per-element quads. A client publishing sub-shapes over
+    // ext-background-effect-v1 cannot ask for this itself: that protocol carries
+    // a pixman region, so a layer-sized rect would swallow the element rects
+    // sitting inside it. Runtime-set via `hyprctl glassregions <ns> layerpane 1`.
+    std::unordered_set<std::string> layerNamespaceLayerPane;
 
     // Per-monitor generation counter, incremented when the scene behind layers
     // changes on that monitor. Layer surfaces compare to their cached value to
