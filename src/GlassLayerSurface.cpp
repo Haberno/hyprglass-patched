@@ -309,7 +309,9 @@ void CGlassLayerSurface::compositeAndRestore(PHLMONITOR monitor, float alpha) {
     // would union them away. Region lists here are plain vectors, so overlap is
     // fine -- each entry still gets its own quad.
     std::vector<SGlassRegion> regionsWithPane;
-    if (!regions.empty() && g_pGlobalState->layerNamespaceLayerPane.contains(layerSurface->m_namespace)) {
+    auto paneIt = g_pGlobalState->layerNamespaceLayerPane.find(layerSurface->m_namespace);
+    if (!regions.empty() && paneIt != g_pGlobalState->layerNamespaceLayerPane.end()) {
+        const float pad = paneIt->second;
         SGlassRegion pane = regions.front();
         float x1 = pane.x, y1 = pane.y, x2 = pane.x + pane.w, y2 = pane.y + pane.h;
         for (const auto& r : regions) {
@@ -318,10 +320,13 @@ void CGlassLayerSurface::compositeAndRestore(PHLMONITOR monitor, float alpha) {
             x2 = std::max(x2, r.x + r.w);
             y2 = std::max(y2, r.y + r.h);
         }
-        pane.x = x1;
-        pane.y = y1;
-        pane.w = x2 - x1;
-        pane.h = y2 - y1;
+        // Without padding the pane's rim lands on the same pixel as the outer
+        // elements' rims and the two read as one muddy edge.
+        pane.x = x1 - pad;
+        pane.y = y1 - pad;
+        pane.w = (x2 - x1) + 2.0f * pad;
+        pane.h = (y2 - y1) + 2.0f * pad;
+        pane.radius += pad;
         regionsWithPane.reserve(regions.size() + 1);
         regionsWithPane.push_back(pane);
         regionsWithPane.insert(regionsWithPane.end(), regions.begin(), regions.end());
