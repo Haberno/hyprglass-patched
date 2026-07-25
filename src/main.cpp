@@ -270,15 +270,16 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
                 else
                     g_pGlobalState->layerNamespaceContentContrast[ns] = std::min(v, 1.f);
             } else if (spec.rfind("layerpane ", 0) == 0) {
-                // glassregions <namespace> layerpane <0|1> — also draw one glass
-                // quad over the whole layer, beneath its per-element quads.
-                int v = 0;
-                if (std::sscanf(spec.c_str() + 10, "%d", &v) != 1)
+                // glassregions <namespace> layerpane <padding> — also draw one
+                // glass quad spanning the per-element quads, beneath them, with
+                // <padding> logical px of breathing room on each side. 0 = off.
+                float v = 0.f;
+                if (std::sscanf(spec.c_str() + 10, "%f", &v) != 1 || !std::isfinite(v))
                     return "err: bad layerpane value";
-                if (v == 0)
+                if (v <= 0.f)
                     g_pGlobalState->layerNamespaceLayerPane.erase(ns);
                 else
-                    g_pGlobalState->layerNamespaceLayerPane.insert(ns);
+                    g_pGlobalState->layerNamespaceLayerPane[ns] = std::min(v, 256.f);
                 for (auto& monitor : State::monitorState()->monitors())
                     g_pHyprRenderer->damageMonitor(monitor);
                 return "ok";
