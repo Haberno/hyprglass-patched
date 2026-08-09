@@ -13,8 +13,11 @@ endif
 TARGET = hyprglass.so
 SOURCES = src/main.cpp src/GlassDecoration.cpp src/GlassPassElement.cpp src/GlassRenderer.cpp src/GlassLayerSurface.cpp src/GlassLayerPassElement.cpp src/GlassLayerCompositeElement.cpp src/PluginConfig.cpp src/ShaderManager.cpp
 OBJ = $(SOURCES:.cpp=.o)
+DEPS = $(OBJ:.o=.d)
 
 all: $(TARGET)
+
+-include $(DEPS)
 
 %.o : %.cpp
 	@echo "[$(CXX)] $<"
@@ -26,6 +29,6 @@ $(TARGET): $(OBJ)
 	@echo "Done!"
 
 clean:
-	rm -f $(OBJ) $(TARGET)
+	rm -f $(OBJ) $(DEPS) $(TARGET)
 
 .PHONY: all clean
