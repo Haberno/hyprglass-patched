@@ -10,6 +10,7 @@
 #include <hyprland/src/render/OpenGL.hpp>
 #include <hyprland/src/render/Renderer.hpp>
 #include <hyprland/src/SharedDefs.hpp>
+#include <hyprutils/signal/Listener.hpp>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -20,6 +21,10 @@ class CGlassDecoration;
 
 
 struct SGlobalState {
+    // Event listeners are owned here so PLUGIN_EXIT unregisters them. Static
+    // listeners outlived the plugin and fired after unload -> SEGV on reload.
+    std::vector<Hyprutils::Signal::CHyprSignalListener> listeners;
+
     std::vector<WP<CGlassDecoration>> decorations;
     CShaderManager                    shaderManager;
     SPluginConfig                     config;
