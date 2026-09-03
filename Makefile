@@ -14,12 +14,13 @@ TARGET = hyprglass.so
 SOURCES = src/main.cpp src/GlassDecoration.cpp src/GlassPassElement.cpp src/GlassRenderer.cpp src/GlassLayerSurface.cpp src/GlassLayerPassElement.cpp src/GlassLayerCompositeElement.cpp src/PluginConfig.cpp src/ShaderManager.cpp
 OBJ = $(SOURCES:.cpp=.o)
 DEPS = $(OBJ:.o=.d)
+HEADERS = $(wildcard src/*.hpp)
 
 all: $(TARGET)
 
 -include $(DEPS)
 
-%.o : %.cpp
+%.o : %.cpp $(HEADERS)
 	@echo "[$(CXX)] $<"
 	@$(CXX) -c $(CXXFLAGS) $(INCLUDES) $< -o $@
 
