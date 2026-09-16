@@ -175,10 +175,12 @@ void main() {
         discard;
     }
 
-    float cornerAlpha = 1.0 - smoothstep(-1.5, 0.5, cornerSdf);
-    if (followContour)
-        cornerAlpha = smoothstep(maskAlphaThreshold, maskAlphaThreshold + .03, surfacePixel.a);
-    if (cornerAlpha < 0.001) discard;
+    // The alpha threshold rejects shadows; it is not pixel coverage. Fade the
+    // entire composite over one physical pixel inside that boundary. A fixed
+    // .03 alpha ramp erased the client's AA and left almost binary edges.
+    float contourCoverage = followContour ? smoothstep(0.0, 1.0, -cornerSdf) : 1.0;
+    float cornerAlpha = followContour ? 1.0 : 1.0 - smoothstep(-1.5, 0.5, cornerSdf);
+    if (cornerAlpha * contourCoverage < 0.001) discard;
 
     float minDim = followContour ? contourHeight : min(fullSize.x, fullSize.y);
     float bezelWidthPx = max(edgeThickness * minDim, .001);
@@ -344,7 +346,7 @@ void main() {
             : vec3(0.0);
 
         // Hyprland's compositor expects premultiplied alpha (blend GL_ONE, GL_ONE_MINUS_SRC_ALPHA).
-        fragColor = vec4(compRGB * compA, compA);
+        fragColor = vec4(compRGB * compA, compA) * contourCoverage;
     } else {
         // Windows: output the glass effect alone, surface is rendered separately by Hyprland.
         // Premultiplied: without this, a fading window's glass keeps full RGB contribution
