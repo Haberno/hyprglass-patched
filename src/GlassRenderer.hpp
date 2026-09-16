@@ -31,6 +31,11 @@ struct SMaskInfo {
     // 0..1: recolor content per-pixel toward the contrast-inverse of its
     // local backdrop (used for bar icons). 0 = draw content as-is.
     float    contentContrast = 0.0f;
+    // A region pass clips glass only; surface content is composited once later.
+    bool     clipOnly = false;
+    // Positive for compact morphing surfaces: derive optics from their alpha
+    // outline, with this pixel height as the optical scale instead of padding.
+    float    contourHeight = 0.0f;
 };
 
 void sampleBackground(SP<Render::IFramebuffer>& sampleFramebuffer, SP<Render::IFramebuffer> sourceFramebuffer,

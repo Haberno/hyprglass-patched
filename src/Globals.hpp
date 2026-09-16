@@ -19,6 +19,12 @@
 
 class CGlassDecoration;
 
+struct SLayerShapeOptions {
+    float radius = -1.0f; // inherit the global background-effect radius
+    float expansionHeight = 56.0f;
+    bool surfaceContour = false;
+    std::string expandedPreset;
+};
 
 struct SGlobalState {
     // Event listeners are owned here so PLUGIN_EXIT unregisters them. Static
@@ -51,6 +57,8 @@ struct SGlobalState {
     std::unordered_set<std::string> layerNamespaceExclude;
     // Per-namespace preset overrides (namespace → preset name)
     std::unordered_map<std::string, std::string> layerNamespacePresets;
+    // Optional shape-specific settings for clients with compact/expanded views.
+    std::unordered_map<std::string, SLayerShapeOptions> layerNamespaceShapes;
     // Per-namespace mask alpha threshold (namespace → threshold, default 0.001)
     std::unordered_map<std::string, float> layerNamespaceMaskThresholds;
     // Namespaces that re-sample the backdrop every frame instead of using the

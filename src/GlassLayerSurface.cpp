@@ -35,9 +35,19 @@ static std::vector<SGlassRegion> backgroundEffectRegions(PHLLS layerSurface, flo
         if (w <= 0.f || h <= 0.f)
             continue;
 
-        out.push_back(SGlassRegion{static_cast<float>(rect.x1) + static_cast<float>(origin.x),
-                                   static_cast<float>(rect.y1) + static_cast<float>(origin.y),
-                                   w, h, radius});
+        const float x = static_cast<float>(rect.x1) + static_cast<float>(origin.x);
+        const float y = static_cast<float>(rect.y1) + static_cast<float>(origin.y);
+        // Pixman bands can split a tall widget at a shorter neighbour's edge.
+        // Reassemble it so that band boundaries do not acquire their own rims.
+        auto previous = std::find_if(out.rbegin(), out.rend(), [&](const auto& r) {
+            return r.x == x && r.w == w && r.y + r.h == y;
+        });
+        if (previous != out.rend()) {
+            previous->h += h;
+            previous->radius = std::min(radius, std::min(w, previous->h) * 0.5f);
+        } else {
+            out.push_back(SGlassRegion{x, y, w, h, std::min(radius, std::min(w, h) * 0.5f)});
+        }
     }
 
     return out;
@@ -82,6 +92,16 @@ std::string CGlassLayerSurface::resolvePresetName() const {
         // Per-namespace preset override (highest priority)
         const auto layerSurface = m_layerSurface.lock();
         if (layerSurface) {
+            const auto shape = g_pGlobalState->layerNamespaceShapes.find(layerSurface->m_namespace);
+            if (shape != g_pGlobalState->layerNamespaceShapes.end() && !shape->second.expandedPreset.empty()) {
+                const auto surface = layerSurface->wlSurface();
+                if (surface && surface->m_hasBackgroundEffect) {
+                    for (const auto& rect : surface->m_blurRegion.getRects()) {
+                        if (rect.y2 - rect.y1 > shape->second.expansionHeight)
+                            return shape->second.expandedPreset;
+                    }
+                }
+            }
             const auto& nsPresets = g_pGlobalState->layerNamespacePresets;
             auto it = nsPresets.find(layerSurface->m_namespace);
             if (it != nsPresets.end())
@@ -106,6 +126,11 @@ std::string CGlassLayerSurface::resolvePresetName() const {
 
 PHLLS CGlassLayerSurface::getLayerSurface() const {
     return m_layerSurface.lock();
+}
+
+size_t CGlassLayerSurface::publishedShapeCount() const {
+    const auto layer = m_layerSurface.lock();
+    return layer ? backgroundEffectRegions(layer, 0.0f).size() : 0;
 }
 
 void CGlassLayerSurface::damageIfMoved() {
@@ -278,6 +303,9 @@ void CGlassLayerSurface::compositeAndRestore(PHLMONITOR monitor, float alpha) {
 
     float cornerRadius  = 0.0f;
     float roundingPower = 2.0f;
+    const auto shapeOptions = g_pGlobalState->layerNamespaceShapes.find(layerSurface->m_namespace);
+    const bool surfaceContour = shapeOptions != g_pGlobalState->layerNamespaceShapes.end() && shapeOptions->second.surfaceContour;
+    float contourHeight = surfaceContour ? shapeOptions->second.expansionHeight * monitor->m_scale : 0.0f;
 
     float contentContrast = 0.0f;
     if (auto ccIt = g_pGlobalState->layerNamespaceContentContrast.find(layerSurface->m_namespace);
@@ -297,7 +325,21 @@ void CGlassLayerSurface::compositeAndRestore(PHLMONITOR monitor, float alpha) {
         float radius = 0.0f;
         if (g_pGlobalState->config.layersBackgroundEffectRadius)
             radius = static_cast<float>(**g_pGlobalState->config.layersBackgroundEffectRadius);
+        const auto shape = g_pGlobalState->layerNamespaceShapes.find(layerSurface->m_namespace);
+        if (shape != g_pGlobalState->layerNamespaceShapes.end() && shape->second.radius >= 0.0f)
+            radius = shape->second.radius;
         publishedRegions = backgroundEffectRegions(layerSurface, std::max(radius, 0.0f));
+    }
+
+    // Compact shapes use the same alpha-derived optics at every animation
+    // frame, including the settled state. Expanded panels retain the cheaper
+    // analytic rounded-box path, clipped by their actual surface alpha.
+    if (surfaceContour && !hasManualRegions) {
+        const bool expanded = std::any_of(publishedRegions.begin(), publishedRegions.end(), [&](const auto& r) {
+            return r.h > shapeOptions->second.expansionHeight;
+        });
+        if (expanded) contourHeight = 0.0f;
+        else publishedRegions.clear();
     }
 
     const auto& regions = hasManualRegions ? regIt->second : publishedRegions;
@@ -358,8 +400,18 @@ void CGlassLayerSurface::compositeAndRestore(PHLMONITOR monitor, float alpha) {
             GlassRenderer::sampleBackground(m_regionFramebuffers[i], target, rt, pad, downscale);
             if (blurRadius > 0.05f)
                 GlassRenderer::blurBackground(m_regionFramebuffers[i], blurRadius, blurIters, target);
+            GlassRenderer::SMaskInfo regionMask{
+                .textureId = m_surfaceTempFramebuffer->getTexture()->m_texID,
+                .target = GL_TEXTURE_2D,
+                .uvOffset = {rt.x / monW, rt.y / monH},
+                .uvScale = {rt.w / monW, rt.h / monH},
+                .alphaThreshold = g_pGlobalState->layerNamespaceMaskThresholds.contains(layerSurface->m_namespace)
+                    ? g_pGlobalState->layerNamespaceMaskThresholds.at(layerSurface->m_namespace) * std::clamp(alpha, 0.0f, 1.0f) : 0.001f,
+                .clipOnly = true,
+            };
             GlassRenderer::applyGlassEffect(m_regionFramebuffers[i], target, rr, rt, alpha,
-                                             r.radius * static_cast<float>(monitor->m_scale), 2.0f, pad, ctx, nullptr);
+                                             r.radius * static_cast<float>(monitor->m_scale), 2.0f, pad, ctx,
+                                             surfaceContour ? &regionMask : nullptr);
         }
 
         // Composite the layer's rendered content over the region glass with a
@@ -427,6 +479,7 @@ void CGlassLayerSurface::compositeAndRestore(PHLMONITOR monitor, float alpha) {
         .uvScale           = {transformBox.w / monitorWidth, transformBox.h / monitorHeight},
         .alphaThreshold    = maskThreshold,
         .contentContrast   = contentContrast,
+        .contourHeight     = contourHeight,
     };
 
     // The glass shader composites both the glass effect and the surface content

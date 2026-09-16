@@ -22,6 +22,8 @@ class CGlassLayerSurface {
     void damageIfMoved();
 
     [[nodiscard]] PHLLS getLayerSurface() const;
+    [[nodiscard]] std::string resolvePresetName() const;
+    [[nodiscard]] size_t publishedShapeCount() const;
 
   private:
     PHLLSREF     m_layerSurface;
@@ -44,5 +46,4 @@ class CGlassLayerSurface {
     SP<Render::IFramebuffer> m_savedCurrentFB;
 
     [[nodiscard]] bool        resolveThemeIsDark() const;
-    [[nodiscard]] std::string resolvePresetName() const;
 };

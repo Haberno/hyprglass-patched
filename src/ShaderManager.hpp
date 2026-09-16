@@ -27,6 +27,7 @@ struct SGlassUniforms {
     GLint maskUVScale = -1;
     GLint maskAlphaThreshold = -1;
     GLint contentContrast = -1;
+    GLint contourHeight = -1;
 };
 
 struct SBlurUniforms {

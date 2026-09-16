@@ -225,7 +225,7 @@ void applyGlassEffect(SP<Render::IFramebuffer> sampleFramebuffer, SP<Render::IFr
     // Layers only: enable mask and provide UV mapping from the glass quad into
     // the monitor-sized temp FBO. Windows use useMask=0 (no masking).
     if (mask && mask->textureId != 0) {
-        glUniform1i(uniforms.useMask, 1);
+        glUniform1i(uniforms.useMask, mask->clipOnly ? 2 : 1);
         glUniform1i(uniforms.maskTex, 1);
         glUniform2f(uniforms.maskUVOffset,
             static_cast<float>(mask->uvOffset.x),
@@ -235,10 +235,12 @@ void applyGlassEffect(SP<Render::IFramebuffer> sampleFramebuffer, SP<Render::IFr
             static_cast<float>(mask->uvScale.y));
         glUniform1f(uniforms.maskAlphaThreshold, mask->alphaThreshold);
         glUniform1f(uniforms.contentContrast, mask->contentContrast);
+        glUniform1f(uniforms.contourHeight, mask->contourHeight);
     } else {
         glUniform1i(uniforms.useMask, 0);
         glUniform1f(uniforms.maskAlphaThreshold, 0.001f);
         glUniform1f(uniforms.contentContrast, 0.0f);
+        glUniform1f(uniforms.contourHeight, 0.0f);
     }
 
     shader->setUniformFloat(SHADER_RADIUS, cornerRadius);

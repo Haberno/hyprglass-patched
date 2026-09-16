@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <charconv>
+#include <cmath>
 #include <cstring>
 #include <hyprland/src/config/ConfigManager.hpp>
 #include <hyprland/src/config/lua/ConfigManager.hpp>
@@ -567,6 +568,7 @@ struct SPendingLayer {
     float       maskThreshold = -1.0f;
     bool        exclude       = false;
     bool        live          = false;
+    SLayerShapeOptions shape;
 };
 
 static std::vector<SPendingLayer> s_pendingLayers;
@@ -598,6 +600,28 @@ static int handleLuaLayer(lua_State* L) {
         if (lua_isboolean(L, -1) && lua_toboolean(L, -1))
             entry.live = true;
         lua_pop(L, 1);
+
+        lua_getfield(L, 2, "radius");
+        if (lua_isnumber(L, -1)) {
+            const float value = static_cast<float>(lua_tonumber(L, -1));
+            if (std::isfinite(value) && value >= 0.0f)
+                entry.shape.radius = value;
+        }
+        lua_pop(L, 1);
+        lua_getfield(L, 2, "expanded_preset");
+        if (lua_isstring(L, -1))
+            entry.shape.expandedPreset = lua_tostring(L, -1);
+        lua_pop(L, 1);
+        lua_getfield(L, 2, "expansion_height");
+        if (lua_isnumber(L, -1)) {
+            const float value = static_cast<float>(lua_tonumber(L, -1));
+            if (std::isfinite(value) && value > 0.0f)
+                entry.shape.expansionHeight = value;
+        }
+        lua_pop(L, 1);
+        lua_getfield(L, 2, "surface_contour");
+        entry.shape.surfaceContour = lua_toboolean(L, -1);
+        lua_pop(L, 1);
     }
 
     s_pendingLayers.push_back(std::move(entry));
@@ -617,6 +641,8 @@ void commitPendingLayers() {
             g_pGlobalState->layerNamespaceFilter.insert(entry.ns);
             if (!entry.preset.empty())
                 g_pGlobalState->layerNamespacePresets[entry.ns] = entry.preset;
+            if (entry.shape.radius >= 0.0f || !entry.shape.expandedPreset.empty() || entry.shape.surfaceContour)
+                g_pGlobalState->layerNamespaceShapes[entry.ns] = entry.shape;
             if (entry.maskThreshold >= 0.0f)
                 g_pGlobalState->layerNamespaceMaskThresholds[entry.ns] = entry.maskThreshold;
             if (entry.live)

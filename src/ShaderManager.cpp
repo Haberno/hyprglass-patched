@@ -50,6 +50,7 @@ bool CShaderManager::compileGlassShader() {
     glassUniforms.maskUVScale         = glGetUniformLocation(program, "maskUVScale");
     glassUniforms.maskAlphaThreshold  = glGetUniformLocation(program, "maskAlphaThreshold");
     glassUniforms.contentContrast     = glGetUniformLocation(program, "contentContrast");
+    glassUniforms.contourHeight       = glGetUniformLocation(program, "contourHeight");
 
     return true;
 }

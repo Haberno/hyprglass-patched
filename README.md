@@ -187,7 +187,24 @@ hg.layer("debug-panel", { exclude = true })
 |---|---|---|
 | `preset` | string | Preset override for this layer |
 | `mask_threshold` | float | Alpha threshold (pixels below this are not glassed). Default `0.001` |
+| `radius` | float | Corner radius for this namespace's published background-effect shapes; defaults to the global radius and is capped at half the shape size |
+| `expanded_preset` | string | Optional preset used when a published background-effect rectangle exceeds `expansion_height` |
+| `expansion_height` | float | Published surface-local rectangle height separating compact/expanded modes; default `56` |
+| `surface_contour` | bool | Opt-in compact optics derived from the rendered alpha outline, including joined/morphing shapes. Expanded region glass is also clipped to surface alpha; default `false` |
 | `exclude` | bool | Blacklist this namespace instead of whitelisting it |
+
+For a launcher that publishes its bar/pills and expanded panel via `ext-background-effect-v1`:
+
+```lua
+hg.layer("spotlight-launcher", {
+    preset = "noctalia_soft", expanded_preset = "default",
+    expansion_height = 56, radius = 28, surface_contour = true, mask_threshold = 0.20, live = true,
+})
+```
+
+`default` uses the existing theme/global resolution chain. No client subprocess or per-frame IPC is needed to select the expanded preset. Protocol scanline bands are merged back into vertically adjacent rectangles with matching horizontal bounds so shorter neighbouring widgets do not split a tall widget's glass rim. `hyprctl glassregions spotlight-launcher status` reports the active preset and normalized published shape count while the layer is mapped.
+
+With `surface_contour`, compact surfaces use bounded GPU alpha-boundary probes for approximate distance and direction at every frame, including the settled state. `expansion_height` supplies their optical height in logical pixels, excluding window padding. Expanded panels use the cheaper analytic rounded-region path plus an alpha clip. Choose a mask threshold above the client's shadow alpha and below its minimum glass opacity. Other layers and windows retain their existing rendering path.
 
 #### Legacy .conf config
 

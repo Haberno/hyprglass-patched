@@ -58,6 +58,7 @@ uniform vec2 maskUVOffset;
 uniform vec2 maskUVScale;
 uniform float maskAlphaThreshold;
 uniform float contentContrast;
+uniform float contourHeight;
 
 in vec2 v_texcoord;
 layout(location = 0) out vec4 fragColor;
@@ -109,6 +110,45 @@ vec2 refractionDir(vec2 uv) {
     return len > 0.1 ? toCenterPx / len : vec2(0.0);
 }
 
+// Compact, animated layer surfaces have one continuous alpha outline, even
+// while several pills are joined. Find its nearby boundary on the GPU instead
+// of switching between a padded window and separate rounded rectangles.
+// Bounded to 12 rays x 12 probes; transparent pixels exit before this work.
+vec3 surfaceContour(vec2 uv) {
+    vec2 origin = uv * maskUVScale + maskUVOffset;
+    vec2 pixel = maskUVScale / fullSize;
+    float reach = contourHeight * .65;
+    float nearest = reach;
+    vec2 direction = vec2(1.0, 0.0);
+    vec2 normal = vec2(0.0);
+    for (int ray = 0; ray < 12; ++ray) {
+        float previous = 0.0;
+        for (int step = 1; step <= 12; ++step) {
+            float t = float(step) / 12.0;
+            float distance = reach * t * t;
+            float a = texture(maskTex, origin + direction * pixel * distance).a;
+            if (a < maskAlphaThreshold) {
+                // Refine the first crossing, keeping narrow gaps between
+                // neighbouring pills rather than jumping into the next pill.
+                float lo = previous, hi = distance;
+                for (int refine = 0; refine < 3; ++refine) {
+                    float mid = (lo + hi) * .5;
+                    if (texture(maskTex, origin + direction * pixel * mid).a < maskAlphaThreshold)
+                        hi = mid;
+                    else lo = mid;
+                }
+                distance = (lo + hi) * .5;
+                nearest = min(nearest, distance);
+                normal -= direction * exp(-distance / max(contourHeight * .07, 1.0));
+                break;
+            }
+            previous = distance;
+        }
+        direction = mat2(.8660254, .5, -.5, .8660254) * direction;
+    }
+    return vec3(-nearest, normal / max(length(normal), .00001));
+}
+
 // ============================================================================
 // MAIN — Thick-glass refraction model
 // ============================================================================
@@ -120,24 +160,28 @@ void main() {
     // Discard fully transparent fragments so glass only covers visible content.
     // For windows, hasMask is false and this block is skipped entirely.
     vec4 surfacePixel = vec4(0.0);
-    bool hasMask = (useMask == 1);
+    bool hasMask = (useMask != 0);
     if (hasMask) {
         vec2 maskUV = uv * maskUVScale + maskUVOffset;
         surfacePixel = texture(maskTex, clamp(maskUV, 0.001, 0.999));
-        if (surfacePixel.a < maskAlphaThreshold) discard;
+        if (surfacePixel.a <= max(maskAlphaThreshold, .00001)) discard;
     }
 
-    float cornerSdf = getCornerSDF(uv);
+    bool followContour = hasMask && contourHeight > 0.0;
+    vec3 contour = followContour ? surfaceContour(uv) : vec3(getCornerSDF(uv), refractionDir(uv));
+    float cornerSdf = contour.x;
 
     if (cornerSdf > 0.0) {
         discard;
     }
 
     float cornerAlpha = 1.0 - smoothstep(-1.5, 0.5, cornerSdf);
+    if (followContour)
+        cornerAlpha = smoothstep(maskAlphaThreshold, maskAlphaThreshold + .03, surfacePixel.a);
     if (cornerAlpha < 0.001) discard;
 
-    float minDim = min(fullSize.x, fullSize.y);
-    float bezelWidthPx = edgeThickness * minDim;
+    float minDim = followContour ? contourHeight : min(fullSize.x, fullSize.y);
+    float bezelWidthPx = max(edgeThickness * minDim, .001);
 
     // ========================================
     // EDGE PROXIMITY + DIRECTION
@@ -145,7 +189,7 @@ void main() {
     // inwardDir: pixel-space direction toward center (smooth everywhere)
     // ========================================
     float edgeProximity = exp(cornerSdf / bezelWidthPx);
-    vec2 inwardDir = refractionDir(uv);
+    vec2 inwardDir = contour.yz;
 
     // ========================================
     // EDGE REFRACTION
@@ -245,7 +289,7 @@ void main() {
     // SPECULAR — subtle top highlight (edge zone)
     // ========================================
     if (specularStrength > 0.001) {
-        float topBias = pow(max(1.0 - uv.y, 0.0), 2.0);
+        float topBias = pow(max(followContour ? inwardDir.y : 1.0 - uv.y, 0.0), 2.0);
         float spec = topBias * edgeProximity * edgeProximity * specularStrength * 0.08;
         color += vec3(1.0, 0.99, 0.97) * spec;
     }
@@ -254,7 +298,7 @@ void main() {
     // INNER SHADOW (bottom rim)
     // ========================================
     {
-        float bottomBias = pow(uv.y, 2.0);
+        float bottomBias = pow(followContour ? max(-inwardDir.y, 0.0) : uv.y, 2.0);
         float shadow = bottomBias * edgeProximity * edgeProximity * 0.06;
         color *= 1.0 - shadow;
     }
@@ -264,7 +308,7 @@ void main() {
     color = clamp(color, 0.0, 1.0);
     float glassA = clamp(glassOpacity * cornerAlpha, 0.0, 1.0);
 
-    if (hasMask) {
+    if (useMask == 1) {
         // Layers only: composite the rendered surface over the glass effect
         // in a single pass. surfacePixel is premultiplied alpha from Hyprland's
         // surface rendering, so we unpremultiply before the 'over' blend.

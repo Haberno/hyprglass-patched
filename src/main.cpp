@@ -144,6 +144,7 @@ static void parseLayerNamespaceFilters() {
     parseCommaSeparated(config.layersExcludeNamespaces, g_pGlobalState->layerNamespaceExclude);
 
     g_pGlobalState->layerNamespacePresets.clear();
+    g_pGlobalState->layerNamespaceShapes.clear();
     parseKeyValuePairs(config.layersNamespacePresets, ':', [&](const std::string& ns, const std::string& preset) {
         g_pGlobalState->layerNamespacePresets.emplace(ns, preset);
     });
@@ -297,6 +298,16 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
                 return "usage: glassregions <namespace> clear|x,y,w,h,r[;...]";
             std::string ns   = rest.substr(0, secondSpace);
             std::string spec = rest.substr(secondSpace + 1);
+            if (spec == "status") {
+                std::string result;
+                for (const auto& [key, glass] : g_pGlobalState->layerSurfaces) {
+                    const auto layer = glass->getLayerSurface();
+                    if (!layer || layer->m_namespace != ns)
+                        continue;
+                    result += std::format("preset={} shapes={}\n", glass->resolvePresetName(), glass->publishedShapeCount());
+                }
+                return result.empty() ? "no mapped glass layer" : result;
+            }
             if (spec == "clear") {
                 g_pGlobalState->layerNamespaceRegions.erase(ns);
             } else if (spec.rfind("contrast ", 0) == 0) {
