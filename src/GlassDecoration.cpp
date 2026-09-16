@@ -148,6 +148,15 @@ void CGlassDecoration::draw(PHLMONITOR monitor, float const& alpha) {
     if (!enabled)
         return;
 
+    // Glass reads and replaces the whole pane, even on a partial repaint.
+    // Refresh its complete source before the queued render pass executes;
+    // needsLiveBlur() only expands damage by Hyprland's native blur radius.
+    // Add to this frame's damage directly so idle windows don't schedule frames.
+    if (auto sampleBox = WindowGeometry::computeWindowBox(m_window.lock(), monitor)) {
+        sampleBox->expand(GlassRenderer::SAMPLE_PADDING_PX);
+        g_pHyprRenderer->m_renderData.damage.add(*sampleBox);
+    }
+
     CGlassPassElement::SGlassPassData data{m_self, alpha};
     g_pHyprRenderer->m_renderPass.add(makeUnique<CGlassPassElement>(data));
 
