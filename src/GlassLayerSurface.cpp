@@ -340,8 +340,8 @@ void CGlassLayerSurface::compositeAndRestore(PHLMONITOR monitor, float alpha) {
         int   downscale    = blurStrength >= GlassRenderer::BLUR_DOWNSCALE_THRESHOLD ? GlassRenderer::BLUR_DOWNSCALE_MAX : 1;
         float blurRadius   = blurStrength * 12.0f / downscale;
         int   blurIters    = std::clamp(static_cast<int>(resolvePresetInt(ctx, &SPresetValues::blurIterations, &SOverridableConfig::blurIterations)), 1, 5);
-        int   monW         = static_cast<int>(monitor->m_transformedSize.x);
-        int   monH         = static_cast<int>(monitor->m_transformedSize.y);
+        int   monW         = static_cast<int>(m_surfaceTempFramebuffer->m_size.x);
+        int   monH         = static_cast<int>(m_surfaceTempFramebuffer->m_size.y);
 
         if (m_regionFramebuffers.size() < drawRegions.size())
             m_regionFramebuffers.resize(drawRegions.size());
